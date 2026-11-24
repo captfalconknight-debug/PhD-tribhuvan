@@ -1,0 +1,2275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Virtual Box and Block Test</title>
+  <meta name="description" content="Virtual Box and Block Test using laptop webcam hand tracking (research prototype).">
+  <style>
+/* Large, high-contrast UI for participants of all ages. */
+:root {
+  --bg: #f3f5f9;
+  --card: #ffffff;
+  --text: #111418;
+  --muted: #4a5360;
+  --line: #c3cad5;
+  --primary: #0b57d0;
+  --primary-text: #ffffff;
+  --danger: #b3261e;
+  --ok: #1e7b34;
+  --warn: #a14a00;
+  --focus: #ffb300;
+  font-size: 19px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; line-height: 1.4; }
+
+.topbar { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; padding: 0.6rem 1rem; background: #0e2a52; color: #fff; }
+.topbar h1 { margin: 0; font-size: 1.4rem; }
+.topbar .muted { color: #c9d6ea; font-size: 0.85rem; }
+
+.layout { display: grid; grid-template-columns: minmax(300px, 360px) 1fr; gap: 1rem; padding: 1rem; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; padding: 0.5rem 16px; } }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 1rem 1rem; margin: 0 0 1rem; min-width: 0; }
+fieldset.card { display: flex; flex-direction: column; gap: 0.55rem; }
+legend, .card h2 { font-weight: 800; font-size: 1.1rem; padding: 0 0.3rem; margin: 0 0 0.3rem; }
+fieldset:disabled { opacity: 0.6; }
+
+label, .label { display: flex; flex-direction: column; gap: 0.2rem; font-weight: 600; }
+.req { color: var(--danger); }
+.hint { font-weight: 400; font-size: 0.8rem; color: var(--muted); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+
+input, select, textarea, button { font: inherit; color: inherit; }
+input:not([type]), input[type=number], select, textarea {
+  border: 2px solid var(--line); border-radius: 8px; padding: 0.45rem 0.55rem; background: #fff; min-height: 2.6rem; width: 100%;
+}
+input[type=range] { width: 100%; accent-color: var(--primary); min-height: 2rem; }
+textarea { resize: vertical; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+button { border: 2px solid #2b3440; background: #fff; border-radius: 8px; padding: 0.55rem 1rem; font-weight: 700; cursor: pointer; min-height: 2.8rem; }
+button:hover:not(:disabled) { background: #eef3fb; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+button.primary:hover:not(:disabled) { background: #0842a0; }
+button.danger { border-color: var(--danger); color: var(--danger); }
+.buttons { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+#start { flex: 1; font-size: 1.25rem; min-height: 3.4rem; }
+#abort { min-height: 3.4rem; }
+
+.check { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 600; }
+.check input { width: 1.4rem; height: 1.4rem; }
+
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.seg label { position: relative; }
+.seg input { position: absolute; opacity: 0; }
+.seg span { display: block; text-align: center; border: 2px solid var(--line); border-radius: 8px; padding: 0.55rem; cursor: pointer; }
+.seg input:checked + span { background: var(--primary); color: #fff; border-color: var(--primary); }
+.seg input:focus-visible + span { outline: 3px solid var(--focus); }
+
+.status { font-size: 0.9rem; color: var(--muted); min-height: 1.2em; }
+.status.ok { color: var(--ok); font-weight: 700; }
+.status.warn, .status.err { color: var(--danger); font-weight: 700; }
+
+#preview { width: 100%; aspect-ratio: 4 / 3; height: auto; border-radius: 8px; background: #000; }
+
+.main { min-width: 0; }
+.hud { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin-bottom: 0.6rem; }
+.hud-item { background: #0e2a52; color: #fff; border-radius: 10px; padding: 0.4rem 0.8rem; display: flex; flex-direction: column; }
+.hud-label { font-size: 0.85rem; color: #c9d6ea; }
+.hud-value { font-size: 2.1rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hud-value.track { font-size: 1.5rem; }
+.track.ok { color: #69f0ae; }
+.track.lost { color: #ff8a80; }
+
+.stage { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; border: 2px solid #2b3440; background: #eef2f7; margin-bottom: 1rem; touch-action: none; }
+.stage canvas { width: 100%; height: 100%; display: block; }
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; text-align: center; padding: 1rem; }
+.overlay .msg { background: rgba(14, 42, 82, 0.92); color: #fff; padding: 1rem 1.6rem; border-radius: 14px; font-size: 1.8rem; font-weight: 800; max-width: 90%; }
+.overlay .count { font-size: 9rem; font-weight: 900; color: #0e2a52; text-shadow: 0 0 18px #fff; }
+.overlay.setup { align-items: flex-start; }
+.setup-box { background: rgba(255, 255, 255, 0.95); border-radius: 12px; padding: 0.8rem 1.2rem; max-width: 92%; box-shadow: 0 4px 20px rgba(0,0,0,0.35); }
+.setup-title { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.3rem; }
+.setup-line { font-size: 1.2rem; font-weight: 600; }
+.setup-line.warn { color: var(--danger); }
+.setup-line.ok { color: var(--ok); }
+.progress { height: 14px; background: #dde3ec; border-radius: 7px; margin-top: 0.5rem; overflow: hidden; }
+.progress div { height: 100%; background: var(--ok); transition: width 0.1s; }
+
+.result-score { font-size: 4rem; font-weight: 900; line-height: 1; margin: 0.2rem 0 0.6rem; }
+.result-score .unit { font-size: 1.4rem; margin-left: 0.5rem; color: var(--muted); }
+table.kv { border-collapse: collapse; width: 100%; }
+table.kv td { border-bottom: 1px solid #e3e7ee; padding: 0.3rem 0.4rem; }
+table.kv td:last-child { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.table-wrap { overflow-x: auto; margin-top: 0.6rem; }
+#sessions { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+#sessions th, #sessions td { border-bottom: 1px solid #e3e7ee; padding: 0.35rem 0.5rem; text-align: left; white-space: nowrap; }
+#sessions th { background: #eef2f7; }
+
+dialog { max-width: 640px; width: calc(100% - 32px); border: 2px solid #2b3440; border-radius: 12px; padding: 1.2rem; font-size: 1.1rem; }
+dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+dialog h2 { margin-top: 0; }
+
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Virtual Box and Block Test</h1>
+    <span class="muted">Research prototype · version <span id="version"></span></span>
+  </header>
+
+  <main class="layout">
+    <!-- ======================= Left panel ======================= -->
+    <aside class="panel">
+      <fieldset class="card" id="formParticipant">
+        <legend>1. Participant</legend>
+        <label><span>Participant ID <span class="req">*</span></span>
+          <input id="pid" autocomplete="off" spellcheck="false" placeholder="e.g. P001">
+        </label>
+        <div class="row2">
+          <label><span>Age <span class="req">*</span></span>
+            <input id="age" type="number" min="18" max="100" inputmode="numeric">
+          </label>
+          <label><span>Sex <span class="req">*</span></span>
+            <select id="sex">
+              <option value="">Select…</option>
+              <option>Female</option><option>Male</option><option>Other</option><option>Prefer not to say</option>
+            </select>
+          </label>
+        </div>
+        <label><span>Dominant hand <span class="req">*</span></span>
+          <select id="dominant">
+            <option value="">Select…</option>
+            <option value="right">Right</option><option value="left">Left</option><option value="both">Both (ambidextrous)</option>
+          </select>
+        </label>
+        <div class="label"><span>Tested hand <span class="req">*</span></span></div>
+        <div class="seg" role="radiogroup" aria-label="Tested hand">
+          <label><input type="radio" name="hand" value="right" checked><span>Right hand</span></label>
+          <label><input type="radio" name="hand" value="left"><span>Left hand</span></label>
+        </div>
+        <label>Notes
+          <textarea id="notes" rows="2"></textarea>
+        </label>
+      </fieldset>
+
+      <fieldset class="card" id="formDevice">
+        <legend>2. Hand tracking</legend>
+        <label>Input
+          <select id="device">
+            <option value="camera">Laptop webcam</option>
+            <option value="mouse">Mouse (simulation)</option>
+          </select>
+        </label>
+        <button id="connect" type="button">Connect</button>
+        <div id="devStatus" class="status">Not connected</div>
+        <canvas id="preview" width="320" height="240" hidden></canvas>
+        <video id="video" playsinline muted hidden></video>
+        <button id="setupBtn" type="button" disabled>Camera check &amp; calibration</button>
+        <div id="calibStatus" class="status">Not calibrated</div>
+        <label><span>Reach area: <output id="reachOut">100%</output></span>
+          <input id="reach" type="range" min="50" max="150" step="5" value="100">
+          <span class="hint">Higher = more hand movement needed</span>
+        </label>
+        <label><span>Pinch sensitivity: <output id="sensOut">5</output></span>
+          <input id="sens" type="range" min="1" max="10" step="1" value="5">
+          <span class="hint">Higher = a pinch is detected more easily</span>
+        </label>
+      </fieldset>
+
+      <fieldset class="card" id="formRun">
+        <legend>3. Run</legend>
+        <label class="check"><input type="checkbox" id="practice"> Practice trial (15 s, not saved)</label>
+        <label class="check"><input type="checkbox" id="highlight" checked> Highlight the block that can be picked up</label>
+        <div class="buttons">
+          <button id="start" type="button" class="primary">Start</button>
+          <button id="abort" type="button" class="danger" disabled>Abort</button>
+        </div>
+        <div id="formMsg" class="status" role="alert"></div>
+      </fieldset>
+    </aside>
+
+    <!-- ======================= Stage ======================= -->
+    <section class="main">
+      <div class="hud" aria-live="polite">
+        <div class="hud-item"><span class="hud-label">Time left</span><span id="hudTime" class="hud-value">60</span></div>
+        <div class="hud-item"><span class="hud-label">Blocks moved</span><span id="hudScore" class="hud-value">0</span></div>
+        <div class="hud-item"><span class="hud-label">Hand</span><span id="hudTrack" class="hud-value track">–</span></div>
+      </div>
+      <div class="stage">
+        <canvas id="stage" aria-label="Box and Block Test scene"></canvas>
+        <div id="overlay" class="overlay" hidden></div>
+      </div>
+
+      <section id="results" class="card" hidden>
+        <h2 id="resultsTitle">Result</h2>
+        <div class="result-score"><span id="resScore">0</span><span class="unit">blocks</span></div>
+        <div id="resFlag" class="status warn" hidden></div>
+        <table class="kv" id="resTable"></table>
+      </section>
+
+      <section class="card">
+        <h2>Saved sessions (stored in this browser on this laptop)</h2>
+        <div class="buttons">
+          <button id="dlCsv" type="button">Download all sessions (CSV)</button>
+          <button id="dlJson" type="button">Download last trial (JSON)</button>
+          <button id="clearData" type="button" class="danger">Clear data…</button>
+        </div>
+        <div class="table-wrap">
+          <table id="sessions">
+            <thead><tr>
+              <th>Date / time</th><th>Participant</th><th>Age</th><th>Hand</th><th>Device</th>
+              <th>Trial</th><th>Score</th><th>Blocks/min</th><th>FPS</th><th>Flag</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="consent">
+    <form method="dialog">
+      <h2 id="consentTitle"></h2>
+      <div id="consentText"></div>
+      <div class="buttons">
+        <button value="cancel" type="submit">Cancel</button>
+        <button value="agree" type="submit" class="primary" id="consentAgree"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>window.VBBT_SINGLE_FILE = true;</script>
+<script type="module">
+// ===== engine.js =====
+const __m1 = (() => {
+/**
+ * engine.js — Virtual Box and Block Test (VBBT) game engine.
+ *
+ * This module contains ONLY the rules, physics, scoring and kinematic
+ * metrics. It has no DOM / browser code, so it can be unit-tested in Node.
+ *
+ * Coordinate system (front view of the box, all units in CENTIMETRES):
+ *   x = 0 at the outer left edge of the box, increasing to the right.
+ *   y = 0 at the floor of the box, increasing UPWARDS.
+ *   A block is a square of side BOX.block; (x, y) is its BOTTOM-LEFT corner.
+ *
+ * Time is in SECONDS since the start of the trial.
+ *
+ * The app feeds one hand sample per frame via update(t, input), where
+ *   input = { present: bool, x: cm, y: cm, pinch: bool }
+ */
+
+/** Standard Box and Block Test dimensions (cm) and simulation constants. */
+const BOX = Object.freeze({
+  width: 53.7,              // outer box length (left–right)
+  depth: 25.4,              // not used in the 2D front view; kept for documentation
+  height: 8.5,              // height of the box walls
+  wall: 0.8,                // wall thickness (simulation assumption)
+  partitionHeight: 15.2,    // partition top, measured from the box floor
+  partitionThickness: 1.0,  // simulation assumption
+  block: 2.5,               // block edge length
+  totalBlocks: 150,
+  cols: 10,                 // visible columns per compartment
+  layers: 3,                // visible layers per compartment
+});
+
+/** Default simulation parameters (can be overridden per engine). */
+const DEFAULTS = Object.freeze({
+  duration: 60,             // seconds
+  grabRadius: 3.0,          // cm, cursor-to-block-centre distance allowed for a grasp
+  lossGraceMs: 250,         // keep holding a block this long after tracking is lost
+  gravity: 981,             // cm/s^2
+  slideSpeed: 40,           // cm/s, speed at which a block slides off the partition top
+  ceiling: 34,              // cm, highest point a held block can be lifted to
+  speedWindow: 0.1,         // s, window used to estimate hand/block speed
+});
+
+const EPS = 1e-6;
+
+// ---- Derived geometry -------------------------------------------------------
+const S = BOX.block;
+const GEOM = Object.freeze({
+  innerLeft: BOX.wall,
+  innerRight: BOX.width - BOX.wall,
+  partitionX0: (BOX.width - BOX.partitionThickness) / 2,
+  partitionX1: (BOX.width + BOX.partitionThickness) / 2,
+  partitionMid: BOX.width / 2,
+  partitionTop: BOX.partitionHeight,
+});
+
+/** Left edge x of the visible grid of 10 columns in a compartment. */
+function gridLeft(side) {
+  const x0 = side === 'left' ? GEOM.innerLeft : GEOM.partitionX1;
+  const x1 = side === 'left' ? GEOM.partitionX0 : GEOM.innerRight;
+  return x0 + ((x1 - x0) - BOX.cols * S) / 2;
+}
+
+/** Which compartment a block belongs to, judged by the x of its centre. */
+function sideOfX(centreX) {
+  return centreX > GEOM.partitionMid ? 'right' : 'left';
+}
+
+function overlap1D(a0, a1, b0, b1) {
+  return Math.min(a1, b1) - Math.max(a0, b0) > EPS;
+}
+
+function rectsOverlap(ax, ay, bx, by) {
+  return overlap1D(ax, ax + S, bx, bx + S) && overlap1D(ay, ay + S, by, by + S);
+}
+
+/** Does a block at (x, y) intersect the partition? */
+function hitsPartition(x, y) {
+  return overlap1D(x, x + S, GEOM.partitionX0, GEOM.partitionX1) && y < GEOM.partitionTop - EPS;
+}
+
+function mean(a) { return a.length ? a.reduce((s, v) => s + v, 0) / a.length : null; }
+function sd(a) {
+  if (a.length < 2) return null;
+  const m = mean(a);
+  return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / (a.length - 1));
+}
+const r3 = (v) => (v == null ? v : Math.round(v * 1000) / 1000);
+
+class VBBTEngine {
+  /**
+   * @param {object} opts
+   * @param {'left'|'right'} opts.testedHand  hand being tested; its side is the source compartment
+   * @param {number} [opts.duration]          trial length in seconds (60 test / 15 practice)
+   */
+  constructor(opts = {}) {
+    this.p = { ...DEFAULTS, ...opts };
+    this.testedHand = opts.testedHand === 'left' ? 'left' : 'right';
+    this.sourceSide = this.testedHand;                          // pick up on the tested-hand side
+    this.targetSide = this.sourceSide === 'left' ? 'right' : 'left';
+
+    this.blocks = [];              // all VISIBLE blocks (resting, falling, sliding or held)
+    this.nextId = 1;
+    this.reserve = BOX.totalBlocks; // hidden blocks "deeper" in the source pile
+    this.targetHidden = 0;          // blocks folded out of view in the target pile (still scored)
+
+    // Fill the visible source pile: 3 layers x 10 columns.
+    for (let layer = 0; layer < BOX.layers; layer++) {
+      for (let col = 0; col < BOX.cols; col++) this.spawn(col, layer, 'rest');
+    }
+
+    this.t = 0;
+    this.lastT = 0;
+    this.finished = false;
+    this.held = null;               // block currently held
+    this.carry = null;              // running measurements of the current carry
+    this.prevPinch = false;
+    this.cursor = null;             // last known cursor {x, y}
+    this.trackingPresent = true;    // trial only starts once a hand is detected
+    this.lostSince = null;
+
+    this.events = [];
+    this.samples = [];
+    this.carries = [];              // completed carries (one per release)
+    this.c = {                      // counters
+      graspAttempts: 0, successfulGrasps: 0, missedGrasps: 0,
+      transfers: 0, failedReleases: 0, returns: 0, repositions: 0,
+      forcedReleases: 0, lossEpisodes: 0, lostTime: 0,
+    };
+    this.transferTimes = [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Block bookkeeping
+  // ---------------------------------------------------------------------------
+
+  /** Move one block from the hidden reserve into a grid slot of the source pile. */
+  spawn(col, layer, state = 'fall') {
+    const b = {
+      id: this.nextId++,
+      x: gridLeft(this.sourceSide) + col * S,
+      y: layer * S,
+      vy: 0,
+      state,          // 'fall' = settles onto whatever is below on the next physics step
+      dir: 0,
+    };
+    this.reserve--;
+    this.blocks.push(b);
+    return b;
+  }
+
+  removeBlock(b) {
+    this.blocks.splice(this.blocks.indexOf(b), 1);
+  }
+
+  sideOf(b) { return sideOfX(b.x + S / 2); }
+
+  /** Is there a block lying directly on top of b? */
+  isCovered(b) {
+    return this.blocks.some((o) => o !== b && o.state !== 'held' &&
+      Math.abs(o.y - (b.y + S)) < 0.01 && overlap1D(o.x, o.x + S, b.x, b.x + S));
+  }
+
+  /** Nearest uncovered resting block whose centre is within the grab radius of (x, y). */
+  grabCandidate(x = this.cursor?.x, y = this.cursor?.y) {
+    if (x == null || this.held) return null;
+    let best = null; let bestD = this.p.grabRadius;
+    for (const b of this.blocks) {
+      if (b.state !== 'rest') continue;
+      const d = Math.hypot(b.x + S / 2 - x, b.y + S / 2 - y);
+      if (d <= bestD && !this.isCovered(b)) { best = b; bestD = d; }
+    }
+    return best;
+  }
+
+  /** Net score: blocks on the target side (visible, not in the hand) + folded hidden blocks. */
+  score() {
+    let n = this.targetHidden;
+    for (const b of this.blocks) if (b.state !== 'held' && this.sideOf(b) === this.targetSide) n++;
+    return n;
+  }
+
+  /** Count of all blocks in the simulation (must always equal 150). */
+  totalBlocks() { return this.blocks.length + this.reserve + this.targetHidden; }
+
+  log(type, extra = {}) { this.events.push({ t: r3(this.t), type, ...extra }); }
+
+  // ---------------------------------------------------------------------------
+  // Main update — call once per frame with the latest hand sample.
+  // ---------------------------------------------------------------------------
+
+  update(t, input) {
+    if (this.finished) return;
+    const end = this.p.duration;
+    const tc = Math.min(t, end);
+    const dt = Math.max(0, Math.min(0.1, tc - this.lastT));  // cap: never simulate >100 ms at once
+    this.t = tc;
+    this.lastT = tc;
+
+    // 1) Tracking status ------------------------------------------------------
+    let justRestored = false;
+    if (!input.present) {
+      if (this.trackingPresent) {
+        this.trackingPresent = false;
+        this.lostSince = tc;
+        this.c.lossEpisodes++;
+        this.log('tracking_lost');
+      }
+      // Grace period: keep holding up to lossGraceMs, then force a release.
+      if (this.held && (tc - this.lostSince) * 1000 >= this.p.lossGraceMs - EPS) {
+        this.release(true);
+      }
+    } else {
+      if (!this.trackingPresent) {
+        this.trackingPresent = true;
+        this.c.lostTime += tc - this.lostSince;
+        this.log('tracking_restored', { lostFor: r3(tc - this.lostSince) });
+        this.lostSince = null;
+        justRestored = true;
+      }
+      this.cursor = { x: input.x, y: input.y };
+
+      // 2) Pinch edges: closing = grasp attempt, opening = release ------------
+      if (input.pinch && !this.prevPinch && !this.held) this.tryGrab();
+      else if (!input.pinch && this.prevPinch && this.held) this.release(false);
+      this.prevPinch = !!input.pinch;
+
+      // 3) Carry the held block toward the cursor (with partition collision) --
+      if (this.held) this.moveHeld(dt, justRestored);
+    }
+
+    // 4) Physics for released blocks, then keep the source pile topped up -----
+    this.physics(dt);
+    this.refillSource();
+
+    // 5) Raw sample -------------------------------------------------------------
+    this.samples.push({
+      t: r3(tc),
+      x: input.present ? r3(input.x) : null,
+      y: input.present ? r3(input.y) : null,
+      pinch: input.present ? (input.pinch ? 1 : 0) : null,
+      held: this.held ? this.held.id : null,
+      present: input.present ? 1 : 0,
+    });
+
+    if (tc >= end - EPS) this.finish();
+  }
+
+  tryGrab() {
+    this.c.graspAttempts++;
+    const b = this.grabCandidate(this.cursor.x, this.cursor.y);
+    if (!b) {
+      this.c.missedGrasps++;
+      this.log('grasp_missed', { x: r3(this.cursor.x), y: r3(this.cursor.y) });
+      return;
+    }
+    this.c.successfulGrasps++;
+    b.state = 'held';
+    b.vy = 0;
+    this.held = b;
+    const cx = b.x + S / 2; const cy = b.y + S / 2;
+    this.carry = {
+      blockId: b.id,
+      from: this.sideOf(b),
+      t0: this.t,
+      // keep the offset between cursor and block centre so the block does not jump
+      offX: cx - this.cursor.x,
+      offY: cy - this.cursor.y,
+      path: 0,
+      minClearance: null,      // smallest gap above the partition top while over it
+      peakSpeed: 0,
+      hist: [{ t: this.t, x: cx, y: cy }],
+    };
+    this.log('grab', { block: b.id, side: this.carry.from });
+  }
+
+  /** Move the held block toward the cursor in small steps so it can never tunnel. */
+  moveHeld(dt, skipSpeed) {
+    const b = this.held;
+    const g = GEOM;
+    let tx = this.cursor.x + this.carry.offX - S / 2;
+    let ty = this.cursor.y + this.carry.offY - S / 2;
+    tx = Math.max(g.innerLeft, Math.min(g.innerRight - S, tx));
+    ty = Math.max(0, Math.min(this.p.ceiling, ty));
+
+    const x0 = b.x; const y0 = b.y;
+    const n = Math.max(1, Math.ceil(Math.max(Math.abs(tx - b.x), Math.abs(ty - b.y)) / 0.2));
+    const sx = (tx - b.x) / n; const sy = (ty - b.y) / n;
+    for (let i = 0; i < n; i++) {
+      // horizontal sub-step
+      let nx = b.x + sx;
+      if (hitsPartition(nx, b.y)) nx = sx > 0 ? g.partitionX0 - S : g.partitionX1;
+      b.x = nx;
+      // vertical sub-step
+      let ny = b.y + sy;
+      if (hitsPartition(b.x, ny)) ny = g.partitionTop; // can only come from above
+      b.y = Math.max(0, ny);
+      this.trackClearance(b);
+    }
+
+    // Kinematics of the carry (block centre path)
+    const c = this.carry;
+    c.path += Math.hypot(b.x - x0, b.y - y0);
+    const cx = b.x + S / 2; const cy = b.y + S / 2;
+    if (skipSpeed) c.hist = [];   // ignore the jump that follows a tracking gap
+    c.hist.push({ t: this.t, x: cx, y: cy });
+    while (c.hist.length > 2 && this.t - c.hist[1].t >= this.p.speedWindow) c.hist.shift();
+    const h0 = c.hist[0];
+    if (this.t - h0.t >= this.p.speedWindow * 0.5) {
+      const v = Math.hypot(cx - h0.x, cy - h0.y) / (this.t - h0.t);
+      if (v > c.peakSpeed) c.peakSpeed = v;
+    }
+  }
+
+  trackClearance(b) {
+    if (overlap1D(b.x, b.x + S, GEOM.partitionX0, GEOM.partitionX1)) {
+      const clr = b.y - GEOM.partitionTop;
+      if (this.carry.minClearance == null || clr < this.carry.minClearance) this.carry.minClearance = clr;
+    }
+  }
+
+  /** Open the hand (or forced by tracking loss): the block starts to fall. */
+  release(forced) {
+    const b = this.held;
+    if (!b) return;
+    b.state = 'fall';
+    b.vy = 0;
+    this.held = null;
+
+    // If released overlapping other blocks, it settles on top of them.
+    let moved = true;
+    while (moved) {
+      moved = false;
+      for (const o of this.blocks) {
+        if (o !== b && o.state !== 'held' && rectsOverlap(b.x, b.y, o.x, o.y)) { b.y = o.y + S; moved = true; }
+      }
+    }
+
+    const c = this.carry;
+    const to = this.sideOf(b);
+    let kind;
+    if (c.from === this.sourceSide && to === this.targetSide) {
+      kind = 'transfer'; this.c.transfers++; this.transferTimes.push(this.t);
+    } else if (c.from === this.targetSide && to === this.sourceSide) {
+      kind = 'return'; this.c.returns++;
+    } else if (c.from === this.sourceSide) {
+      kind = 'failed_release'; this.c.failedReleases++;
+    } else {
+      kind = 'reposition'; this.c.repositions++;
+    }
+    if (forced) this.c.forcedReleases++;
+
+    this.carries.push({
+      blockId: c.blockId, kind, forced,
+      duration: this.t - c.t0, path: c.path, peakSpeed: c.peakSpeed,
+      minClearance: c.minClearance,
+    });
+    this.log(forced ? 'forced_release' : 'release', { block: b.id, side: to, kind });
+    if (kind === 'transfer') this.log('transfer', { block: b.id, score: this.score() });
+    if (kind === 'return') this.log('return', { block: b.id, score: this.score() });
+    this.carry = null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Physics: gravity, stacking, sliding off the partition top
+  // ---------------------------------------------------------------------------
+
+  physics(dt) {
+    const steps = Math.max(1, Math.ceil(dt / (1 / 240)));
+    const h = dt / steps;
+    for (let k = 0; k < steps; k++) {
+      for (const b of [...this.blocks]) {
+        if (b.state === 'slide') {
+          b.x += b.dir * this.p.slideSpeed * h;
+          b.x = Math.max(GEOM.innerLeft, Math.min(GEOM.innerRight - S, b.x));
+          if (!overlap1D(b.x, b.x + S, GEOM.partitionX0, GEOM.partitionX1)) b.state = 'fall';
+        } else if (b.state === 'fall') {
+          const yPrev = b.y;
+          b.vy -= this.p.gravity * h;
+          b.y += b.vy * h;
+          const sup = this.supportBelow(b, yPrev);
+          if (b.y <= sup.y + EPS) {
+            b.y = sup.y;
+            b.vy = 0;
+            if (sup.partition) {
+              // Landed on the partition top: it slides off toward the side its centre is on.
+              b.state = 'slide';
+              b.dir = b.x + S / 2 > GEOM.partitionMid ? 1 : -1;
+              this.log('partition_slide', { block: b.id });
+            } else {
+              b.state = 'rest';
+              this.onRest(b);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /** Highest surface under block b (floor, another block or the partition top). */
+  supportBelow(b, yPrev) {
+    let best = { y: 0, partition: false };
+    for (const o of this.blocks) {
+      if (o === b || o.state === 'held') continue;
+      const top = o.y + S;
+      if (top <= yPrev + EPS && top > best.y && overlap1D(b.x, b.x + S, o.x, o.x + S)) best = { y: top, partition: false };
+    }
+    if (overlap1D(b.x, b.x + S, GEOM.partitionX0, GEOM.partitionX1) &&
+        GEOM.partitionTop <= yPrev + EPS && GEOM.partitionTop >= best.y) {
+      best = { y: GEOM.partitionTop, partition: true };
+    }
+    return best;
+  }
+
+  /**
+   * Depth simulation. Only 3 layers are drawn. A block that comes to rest in a
+   * 4th layer (or higher) is folded out of view:
+   *   - target side: added to the hidden target counter (still scored);
+   *   - source side: returned to the hidden reserve.
+   */
+  onRest(b) {
+    if (b.y < BOX.layers * S - 0.01) return;
+    this.removeBlock(b);
+    if (this.sideOf(b) === this.targetSide) {
+      this.targetHidden++;
+      this.log('fold_target', { block: b.id, hidden: this.targetHidden });
+    } else {
+      this.reserve++;
+      this.log('fold_source', { block: b.id, reserve: this.reserve });
+    }
+  }
+
+  /** Keep 30 blocks visible in the source compartment while the reserve lasts. */
+  refillSource() {
+    if (this.reserve <= 0) return;
+    const visible = this.blocks.filter((b) => b.state !== 'held' && this.sideOf(b) === this.sourceSide).length;
+    if (visible >= BOX.cols * BOX.layers) return;
+    const left = gridLeft(this.sourceSide);
+    for (let layer = 0; layer < BOX.layers; layer++) {
+      for (let col = 0; col < BOX.cols; col++) {
+        const x = left + col * S; const y = layer * S;
+        const free = !this.blocks.some((o) => rectsOverlap(x, y, o.x, o.y));
+        const supported = layer === 0 || this.blocks.some((o) => o.state === 'rest' &&
+          Math.abs(o.y + S - y) < 0.01 && overlap1D(x, x + S, o.x, o.x + S));
+        if (free && supported) { this.spawn(col, layer); return; }  // one block per frame
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // End of trial and summary
+  // ---------------------------------------------------------------------------
+
+  finish() {
+    if (this.finished) return;
+    if (!this.trackingPresent && this.lostSince != null) this.c.lostTime += this.t - this.lostSince;
+    this.finalScore = this.score();   // block still in the hand is NOT counted
+    this.finished = true;
+    this.log('end', { score: this.finalScore });
+  }
+
+  /** All per-trial metrics. Distances in cm, times in s, speeds in cm/s. */
+  summary() {
+    const dur = this.finished ? this.p.duration : this.t;
+    const score = this.finished ? this.finalScore : this.score();
+    const tr = this.carries.filter((c) => c.kind === 'transfer');
+    const cycles = [];
+    for (let i = 1; i < this.transferTimes.length; i++) cycles.push(this.transferTimes[i] - this.transferTimes[i - 1]);
+    const clear = tr.map((c) => c.minClearance).filter((v) => v != null);
+    const durSafe = Math.max(dur, EPS);
+    const present = this.samples.filter((s) => s.present).length;
+    return {
+      score,
+      blocksPerMinute: r3(score * 60 / durSafe),
+      duration: r3(dur),
+      transfers: this.c.transfers,
+      graspAttempts: this.c.graspAttempts,
+      successfulGrasps: this.c.successfulGrasps,
+      missedGrasps: this.c.missedGrasps,
+      failedReleases: this.c.failedReleases,
+      returns: this.c.returns,
+      repositions: this.c.repositions,
+      forcedReleases: this.c.forcedReleases,
+      timeToFirstTransfer: r3(this.transferTimes[0] ?? null),
+      cycleTimeMean: r3(mean(cycles)),
+      cycleTimeSD: r3(sd(cycles)),
+      carryPathMean: r3(mean(tr.map((c) => c.path))),
+      carrySpeedMean: r3(mean(tr.filter((c) => c.duration > 0).map((c) => c.path / c.duration))),
+      carryDurationMean: r3(mean(tr.map((c) => c.duration))),
+      peakSpeed: r3(this.carries.length ? Math.max(...this.carries.map((c) => c.peakSpeed)) : null),
+      clearanceMean: r3(mean(clear)),
+      trackingLossEpisodes: this.c.lossEpisodes,
+      trackingLostTime: r3(this.c.lostTime),
+      sampleCount: this.samples.length,
+      sampleRate: r3(this.samples.length / durSafe),
+      presentFraction: r3(this.samples.length ? present / this.samples.length : null),
+      targetHidden: this.targetHidden,
+      reserveLeft: this.reserve,
+    };
+  }
+}
+
+return { BOX, DEFAULTS, GEOM, gridLeft, sideOfX, VBBTEngine };
+})();
+
+// ===== render.js =====
+const __m2 = (() => {
+/**
+ * render.js — draws the front view of the box on a <canvas>.
+ * Reads engine state; never changes it.
+ */
+const { BOX, GEOM, DEFAULTS } = __m1;
+
+const S = BOX.block;
+// Visible part of the world, in cm (x right, y up).
+const VIEW = { x0: -6, x1: BOX.width + 6, y0: -4.5, y1: 34 };
+
+const COLORS = ['#d32f2f', '#1565c0', '#2e7d32', '#f9a825', '#6a1b9a', '#ef6c00'];
+
+class Renderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.resize();
+  }
+
+  /** Match the canvas resolution to its on-screen size (sharp on high-DPI screens). */
+  resize() {
+    const r = this.canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.max(1, Math.round(r.width * dpr));
+    this.canvas.height = Math.max(1, Math.round(r.height * dpr));
+    const W = this.canvas.width; const H = this.canvas.height;
+    const vw = VIEW.x1 - VIEW.x0; const vh = VIEW.y1 - VIEW.y0;
+    this.scale = Math.min(W / vw, H / vh);
+    this.ox = (W - vw * this.scale) / 2;
+    this.oy = (H - vh * this.scale) / 2;
+    this.dpr = dpr;
+  }
+
+  // world (cm) -> canvas pixels
+  px(x) { return this.ox + (x - VIEW.x0) * this.scale; }
+  py(y) { return this.oy + (VIEW.y1 - y) * this.scale; }
+
+  /** Stage fractions (u, v; v = 0 at top) -> world cm. Used for every input. */
+  toWorld(u, v) {
+    const x = (u * this.canvas.width - this.ox) / this.scale + VIEW.x0;
+    const y = VIEW.y1 - (v * this.canvas.height - this.oy) / this.scale;
+    return { x, y };
+  }
+
+  rect(x, y, w, h, fill, stroke, lw = 2) {
+    const c = this.ctx;
+    const X = this.px(x); const Y = this.py(y + h);
+    c.fillStyle = fill; c.fillRect(X, Y, w * this.scale, h * this.scale);
+    if (stroke) { c.strokeStyle = stroke; c.lineWidth = lw * this.dpr; c.strokeRect(X, Y, w * this.scale, h * this.scale); }
+  }
+
+  text(str, x, y, size, color = '#111', align = 'center', weight = '700') {
+    const c = this.ctx;
+    c.fillStyle = color;
+    c.font = `${weight} ${Math.round(size * this.scale)}px system-ui, -apple-system, "Segoe UI", Arial, sans-serif`;
+    c.textAlign = align; c.textBaseline = 'middle';
+    c.fillText(str, this.px(x), this.py(y));
+  }
+
+  /**
+   * @param {VBBTEngine|null} e
+   * @param {object} o  { cursor: {x,y,pinch,present} | null, highlight: bool, labels: bool }
+   */
+  draw(e, o = {}) {
+    const c = this.ctx;
+    const W = this.canvas.width; const H = this.canvas.height;
+    c.fillStyle = '#eef2f7'; c.fillRect(0, 0, W, H);
+
+    const src = e ? e.sourceSide : (o.sourceSide || 'right');
+    const tgt = src === 'left' ? 'right' : 'left';
+    const comp = (side) => (side === 'left'
+      ? [GEOM.innerLeft, GEOM.partitionX0]
+      : [GEOM.partitionX1, GEOM.innerRight]);
+
+    // Table
+    this.rect(VIEW.x0, VIEW.y0, VIEW.x1 - VIEW.x0, -VIEW.y0, '#cfd8dc');
+
+    // Target compartment tint (inside the box) and a lighter column above it
+    const [tx0, tx1] = comp(tgt);
+    this.rect(tx0, 0, tx1 - tx0, 24, 'rgba(56, 196, 96, 0.12)');
+    this.rect(tx0, 0, tx1 - tx0, BOX.height, '#b9f6ca');
+
+    // Box: floor, outer walls, partition
+    this.rect(0, -0.8, BOX.width, 0.8, '#5d4037');
+    this.rect(0, 0, BOX.wall, BOX.height, '#795548', '#3e2723', 1.5);
+    this.rect(BOX.width - BOX.wall, 0, BOX.wall, BOX.height, '#795548', '#3e2723', 1.5);
+    this.rect(GEOM.partitionX0, 0, BOX.partitionThickness, BOX.partitionHeight, '#6d4c41', '#3e2723', 1.5);
+
+    // Labels
+    if (o.labels !== false) {
+      const [sx0, sx1] = comp(src);
+      this.text('PICK UP HERE', (sx0 + sx1) / 2, 30.5, 2.6, '#0d47a1');
+      this.text('PLACE HERE', (tx0 + tx1) / 2, 30.5, 2.6, '#1b5e20');
+      this.text('↓', (sx0 + sx1) / 2, 27.4, 2.6, '#0d47a1');
+      this.text('↓', (tx0 + tx1) / 2, 27.4, 2.6, '#1b5e20');
+    }
+
+    if (!e) return;
+
+    // Hidden counts (depth simulation)
+    const [sx0, sx1] = comp(src);
+    this.text(`More blocks behind: ${e.reserve}`, (sx0 + sx1) / 2, -2.6, 1.5, '#263238', 'center', '600');
+    this.text(`Stacked behind: ${e.targetHidden}`, (tx0 + tx1) / 2, -2.6, 1.5, '#263238', 'center', '600');
+
+    // Blocks
+    const cand = o.highlight && o.cursor?.present ? e.grabCandidate(o.cursor.x, o.cursor.y) : null;
+    for (const b of e.blocks) {
+      if (b.state === 'held') continue;
+      this.rect(b.x, b.y, S, S, COLORS[b.id % COLORS.length], '#1a1a1a', 1.2);
+    }
+    if (cand) {
+      c.save();
+      c.shadowColor = '#ffab00'; c.shadowBlur = 12 * this.dpr;
+      this.rect(cand.x - 0.15, cand.y - 0.15, S + 0.3, S + 0.3, 'rgba(0,0,0,0)', '#ff6d00', 4);
+      c.restore();
+    }
+    if (e.held) {
+      const b = e.held;
+      this.rect(b.x + 0.35, b.y - 0.35, S, S, 'rgba(0,0,0,0.25)');
+      this.rect(b.x, b.y, S, S, COLORS[b.id % COLORS.length], '#000', 2);
+    }
+
+    // Cursor ring: radius = grab radius; filled while pinching
+    const cur = o.cursor;
+    if (cur) {
+      const R = DEFAULTS.grabRadius * this.scale * 0.6;
+      c.beginPath();
+      c.arc(this.px(cur.x), this.py(cur.y), R, 0, Math.PI * 2);
+      c.lineWidth = 4 * this.dpr;
+      if (cur.present) {
+        c.strokeStyle = '#0d47a1';
+        c.setLineDash([]);
+        if (cur.pinch) { c.fillStyle = 'rgba(13, 71, 161, 0.55)'; c.fill(); }
+      } else {
+        c.strokeStyle = '#9e9e9e';
+        c.setLineDash([6 * this.dpr, 6 * this.dpr]);
+      }
+      c.stroke();
+      c.setLineDash([]);
+      c.beginPath(); c.arc(this.px(cur.x), this.py(cur.y), 3 * this.dpr, 0, Math.PI * 2);
+      c.fillStyle = cur.present ? '#0d47a1' : '#9e9e9e'; c.fill();
+    }
+  }
+}
+
+return { Renderer };
+})();
+
+// ===== filters.js =====
+const __m3 = (() => {
+/**
+ * filters.js — One Euro filter (Casiez, Roussel & Vogel, CHI 2012).
+ *
+ * An adaptive low-pass filter: at low speeds it smooths strongly (removes
+ * jitter), at high speeds it smooths less (keeps lag low).
+ *   cutoff = minCutoff + beta * |speed|
+ * Used on the normalised cursor coordinates u and v (units: screen fraction).
+ */
+
+function alpha(cutoff, dt) {
+  const tau = 1 / (2 * Math.PI * cutoff);
+  return 1 / (1 + tau / dt);
+}
+
+class OneEuroFilter {
+  /**
+   * @param {number} minCutoff  Hz — lower = smoother when the hand is still
+   * @param {number} beta       speed coefficient — higher = less lag when moving fast
+   * @param {number} dCutoff    Hz — cutoff for the speed estimate
+   */
+  constructor(minCutoff = 1.0, beta = 4.0, dCutoff = 1.0) {
+    this.minCutoff = minCutoff;
+    this.beta = beta;
+    this.dCutoff = dCutoff;
+    this.reset();
+  }
+
+  reset() { this.x = null; this.dx = 0; this.t = null; }
+
+  /** Filter value x observed at time t (seconds). */
+  filter(x, t) {
+    if (this.x == null || this.t == null || t <= this.t) {
+      if (this.x == null) { this.x = x; this.t = t; }
+      return this.x;
+    }
+    const dt = t - this.t;
+    const dxRaw = (x - this.x) / dt;
+    this.dx = this.dx + alpha(this.dCutoff, dt) * (dxRaw - this.dx);
+    const cutoff = this.minCutoff + this.beta * Math.abs(this.dx);
+    this.x = this.x + alpha(cutoff, dt) * (x - this.x);
+    this.t = t;
+    return this.x;
+  }
+}
+
+return { OneEuroFilter };
+})();
+
+// ===== inputs/mouse.js =====
+const __m4 = (() => {
+/**
+ * inputs/mouse.js — simulation input for development and demonstrations.
+ *
+ * Move the mouse over the stage = hand position; hold the mouse button = pinch.
+ * u, v are fractions of the stage canvas (v = 0 at the top), so the mouse maps
+ * directly onto the scene (no reach-area mapping, no smoothing).
+ */
+class MouseInput {
+  constructor(target) {
+    this.kind = 'mouse';
+    this.target = target;
+    this.state = { present: false, u: 0.5, v: 0.5, pinch: false };
+    this.seq = 0;
+    this._on = (e) => this._handle(e);
+  }
+
+  async start() {
+    for (const ev of ['pointermove', 'pointerdown', 'pointerup', 'pointerleave', 'pointerenter']) {
+      this.target.addEventListener(ev, this._on);
+    }
+    return { label: 'Mouse (simulation)' };
+  }
+
+  stop() {
+    for (const ev of ['pointermove', 'pointerdown', 'pointerup', 'pointerleave', 'pointerenter']) {
+      this.target.removeEventListener(ev, this._on);
+    }
+    this.state.present = false;
+  }
+
+  _handle(e) {
+    const r = this.target.getBoundingClientRect();
+    this.state.u = (e.clientX - r.left) / r.width;
+    this.state.v = (e.clientY - r.top) / r.height;
+    if (e.type === 'pointerdown') { this.state.pinch = true; e.preventDefault(); }
+    if (e.type === 'pointerup') this.state.pinch = false;
+    this.state.present = e.type !== 'pointerleave';
+    if (e.type === 'pointerleave') this.state.pinch = false;
+    this.seq++;
+  }
+
+  /** Latest hand sample: {present, u, v, pinch}. */
+  read() { return { ...this.state, seq: this.seq }; }
+}
+
+return { MouseInput };
+})();
+
+// ===== inputs/handmath.js =====
+const __m6 = (() => {
+/**
+ * inputs/handmath.js — pure functions for webcam hand tracking (no DOM).
+ *
+ * MediaPipe hand landmark indices used here:
+ *   0 = wrist, 4 = thumb tip, 8 = index finger tip, 9 = middle finger MCP.
+ */
+
+const LM = { WRIST: 0, THUMB_TIP: 4, INDEX_TIP: 8, MIDDLE_MCP: 9 };
+
+function dist3(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+}
+
+/**
+ * Pinch ratio = thumb-tip to index-tip distance / wrist to middle-MCP distance.
+ * Dividing by a hand-size reference makes it independent of hand size and of
+ * distance from the camera. Uses MediaPipe "world" landmarks (metres, 3D)
+ * when available, which are less sensitive to hand rotation; otherwise uses
+ * image landmarks corrected for the image aspect ratio.
+ */
+function pinchRatio(world, image, aspect = 4 / 3) {
+  if (world && world.length > 9) {
+    return dist3(world[LM.THUMB_TIP], world[LM.INDEX_TIP]) / Math.max(1e-6, dist3(world[LM.WRIST], world[LM.MIDDLE_MCP]));
+  }
+  const sc = (p) => ({ x: p.x * aspect, y: p.y, z: (p.z || 0) * aspect });
+  const L = image.map(sc);
+  return dist3(L[LM.THUMB_TIP], L[LM.INDEX_TIP]) / Math.max(1e-6, dist3(L[LM.WRIST], L[LM.MIDDLE_MCP]));
+}
+
+/** Cursor = midpoint of thumb tip and index tip, mirrored horizontally (u = 1 - x). */
+function cursorFromLandmarks(image) {
+  const a = image[LM.THUMB_TIP]; const b = image[LM.INDEX_TIP];
+  return { u: 1 - (a.x + b.x) / 2, v: (a.y + b.y) / 2 };
+}
+
+/** Palm length (wrist to middle MCP) as a fraction of the image width — a rough distance cue. */
+function palmSize(image, aspect = 4 / 3) {
+  const a = image[LM.WRIST]; const b = image[LM.MIDDLE_MCP];
+  return Math.hypot((a.x - b.x), (a.y - b.y) / aspect);
+}
+
+/** Default thresholds used before a participant is calibrated. */
+const DEFAULT_PINCH = { close: 0.30, open: 0.45 };
+
+/**
+ * Pinch thresholds from a per-participant calibration and the 1–10 sensitivity slider.
+ *   calib = { open: median ratio with an open hand, pinch: median ratio while pinching }
+ * Close threshold at 35 % and open threshold at 55 % of the way from pinch to open
+ * (the gap between them is the hysteresis). Sensitivity 5 = neutral; each step
+ * scales both thresholds by 8 % (higher = a pinch is detected more easily).
+ */
+function pinchThresholds(calib, sensitivity = 5) {
+  let close; let open;
+  if (calib && calib.open > calib.pinch) {
+    const r = calib.open - calib.pinch;
+    close = calib.pinch + 0.35 * r;
+    open = calib.pinch + 0.55 * r;
+  } else {
+    ({ close, open } = DEFAULT_PINCH);
+  }
+  const k = 1 + (Math.max(1, Math.min(10, sensitivity)) - 5) * 0.08;
+  return { close: close * k, open: open * k };
+}
+
+/** Pinch state with hysteresis: closes below `close`, opens above `open`. */
+class PinchDetector {
+  constructor(th = DEFAULT_PINCH) { this.th = th; this.state = false; }
+  setThresholds(th) { this.th = th; }
+  update(ratio) {
+    if (ratio == null || Number.isNaN(ratio)) return this.state;
+    if (!this.state && ratio < this.th.close) this.state = true;
+    else if (this.state && ratio > this.th.open) this.state = false;
+    return this.state;
+  }
+  reset() { this.state = false; }
+}
+
+/**
+ * Pick the landmarks of the tested hand from a MediaPipe HandLandmarker result.
+ * MediaPipe labels each hand "Left" or "Right". Whether the label refers to the
+ * participant's own hand depends on whether the image is mirrored, so the
+ * camera check measures this once per laptop (`invert`).
+ * `allowSingle`: before that check, if only ONE hand is visible, use it even
+ * if its label does not match.
+ */
+function selectHand(result, testedHand, invert = false, allowSingle = false) {
+  const hands = [];
+  const n = result?.landmarks?.length || 0;
+  for (let i = 0; i < n; i++) {
+    const cat = (result.handedness || result.handednesses || [])[i]?.[0];
+    let label = (cat?.categoryName || '').toLowerCase();
+    if (invert) label = label === 'left' ? 'right' : label === 'right' ? 'left' : label;
+    hands.push({ index: i, label, score: cat?.score ?? 0, image: result.landmarks[i], world: result.worldLandmarks?.[i] });
+  }
+  let match = hands.filter((h) => h.label === testedHand).sort((a, b) => b.score - a.score)[0] || null;
+  if (!match && allowSingle && hands.length === 1) match = { ...hands[0], assumed: true };
+  return { hand: match, all: hands };
+}
+
+/** Median of an array of numbers. */
+function median(a) {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+/** p-th percentile (0..1) of an array, linear interpolation. */
+function percentile(a, p) {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  const i = (s.length - 1) * p; const lo = Math.floor(i); const hi = Math.ceil(i);
+  return s[lo] + (s[hi] - s[lo]) * (i - lo);
+}
+
+return { LM, pinchRatio, cursorFromLandmarks, palmSize, DEFAULT_PINCH, pinchThresholds, PinchDetector, selectHand, median, percentile };
+})();
+
+// ===== config.js =====
+const __m7 = (() => {
+/**
+ * config.js — settings the researcher may edit without touching the rest of the code.
+ */
+
+const APP_VERSION = '1.0.0';
+
+/** Trial durations in seconds. */
+const TEST_DURATION = 60;
+const PRACTICE_DURATION = 15;
+
+/** Trials whose measured camera frame rate is below this are flagged. */
+const FPS_WARNING = 25;
+
+/** Where the MediaPipe files live (relative to index.html). */
+const MEDIAPIPE_LOCAL = '../vendor/mediapipe/';
+/**
+ * Fallback used ONLY if the local files cannot be loaded (e.g. the single-file
+ * build opened directly from disk). Set to null to forbid any CDN use.
+ */
+const MEDIAPIPE_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/';
+const MEDIAPIPE_MODEL_CDN =
+  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+
+/**
+ * Starting assumption for MediaPipe's left/right labels. The camera check
+ * detects automatically if they are swapped on a laptop, so leave this false.
+ */
+const HANDEDNESS_INVERTED = false;
+
+/**
+ * Consent text shown before a participant's first trial.
+ * REPLACE THIS with the wording approved by your ethics committee.
+ * Each array item is one paragraph.
+ */
+const CONSENT_TITLE = 'Participant consent';
+const CONSENT_TEXT = [
+  '[Placeholder - replace with the consent text approved by your ethics committee.]',
+  'This test uses the laptop camera to follow the movement of your hand. The video is processed only on this laptop. No video or pictures are recorded, stored or sent anywhere. Only the test scores and movement measurements are saved.',
+  'Taking part is voluntary. You can stop at any time without giving a reason.',
+];
+const CONSENT_BUTTON = 'I have read this and I agree to take part';
+
+return { APP_VERSION, TEST_DURATION, PRACTICE_DURATION, FPS_WARNING, MEDIAPIPE_LOCAL, MEDIAPIPE_CDN, MEDIAPIPE_MODEL_CDN, HANDEDNESS_INVERTED, CONSENT_TITLE, CONSENT_TEXT, CONSENT_BUTTON };
+})();
+
+// ===== inputs/camera.js =====
+const __m5 = (() => {
+/**
+ * inputs/camera.js — laptop webcam hand tracking with MediaPipe HandLandmarker.
+ *
+ * Everything runs inside the browser on this laptop: video frames are passed
+ * to the MediaPipe model in memory and are never recorded, stored or uploaded.
+ *
+ * read(now) returns { present, u, v, pinch } where u, v are fractions of the
+ * (mirrored) camera image, v = 0 at the top. The app maps them onto the stage
+ * using the reach area. Extra fields (ratio, palm, label, ...) are used by the
+ * setup check and for logging.
+ */
+const { cursorFromLandmarks, pinchRatio, palmSize, PinchDetector, selectHand, DEFAULT_PINCH } = __m6;
+const { MEDIAPIPE_LOCAL, MEDIAPIPE_CDN, MEDIAPIPE_MODEL_CDN, HANDEDNESS_INVERTED } = __m7;
+
+// Bones of the hand skeleton for the preview overlay (MediaPipe landmark pairs).
+const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11],
+  [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
+
+const STALE_MS = 300;   // if no new detection for this long, the hand counts as "not present"
+
+let landmarkerPromise = null;   // the model is loaded once per page and reused
+
+/**
+ * Load MediaPipe and the hand model (local vendor/ folder first, CDN only as a
+ * fallback), create a GPU and a CPU version, time both on the live video and
+ * keep the faster one. On laptops without usable graphics acceleration the
+ * "GPU" path runs in software and can be many times slower than the CPU path.
+ */
+async function loadLandmarker(video) {
+  const attempts = [
+    { lib: new URL(MEDIAPIPE_LOCAL, location.href).href, model: new URL(MEDIAPIPE_LOCAL + 'hand_landmarker.task', location.href).href, where: 'local' },
+  ];
+  if (MEDIAPIPE_CDN) attempts.push({ lib: MEDIAPIPE_CDN, model: MEDIAPIPE_MODEL_CDN, where: 'cdn' });
+  let lastErr;
+  for (const a of attempts) {
+    try {
+      const vision = await import(/* webpackIgnore: true */ a.lib + 'vision_bundle.mjs');
+      const wasmBase = a.where === 'local' ? a.lib.replace(/\/$/, '') : a.lib + 'wasm';
+      const fileset = await vision.FilesetResolver.forVisionTasks(wasmBase);
+      const found = [];
+      for (const delegate of ['GPU', 'CPU']) {
+        try {
+          const lm = await vision.HandLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: a.model, delegate },
+            runningMode: 'VIDEO',
+            numHands: 2,
+            minHandDetectionConfidence: 0.5,
+            minHandPresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+          });
+          found.push({ lm, delegate, ms: benchmark(lm, video) });
+        } catch (e) { lastErr = e; }
+      }
+      if (found.length) {
+        found.sort((x, y) => x.ms - y.ms);
+        for (const f of found.slice(1)) f.lm.close();
+        const timings = Object.fromEntries(found.map((f) => [f.delegate, Math.round(f.ms)]));
+        return { lm: found[0].lm, delegate: found[0].delegate, source: a.where, timings };
+      }
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error('Could not load the hand-tracking model: ' + (lastErr?.message || lastErr));
+}
+
+/** Median time (ms) of a few detections on the current video frame. */
+function benchmark(lm, video) {
+  const times = [];
+  let ts = performance.now();
+  for (let i = 0; i < 6; i++) {
+    ts += 34;
+    const t0 = performance.now();
+    lm.detectForVideo(video, ts);
+    if (i > 0) times.push(performance.now() - t0);   // first call includes warm-up
+  }
+  times.sort((a, b) => a - b);
+  // Later real timestamps must be larger than the ones used here.
+  lm._vbbtLastTs = ts;
+  return times[times.length >> 1];
+}
+
+class CameraInput {
+  /**
+   * @param {object} o
+   * @param {HTMLVideoElement} o.video     hidden video element receiving the webcam stream
+   * @param {HTMLCanvasElement} [o.preview] small canvas for the mirrored preview + skeleton
+   * @param {'left'|'right'} o.testedHand
+   */
+  constructor({ video, preview, testedHand = 'right' }) {
+    this.kind = 'camera';
+    this.video = video;
+    this.preview = preview;
+    this.testedHand = testedHand;
+    this.pinch = new PinchDetector(DEFAULT_PINCH);
+    this.latest = { present: false, u: 0.5, v: 0.5, pinch: false, t: 0 };
+    this.seq = 0;
+    this.running = false;
+    this.fpsTimes = [];
+    this.lastVideoTime = -1;
+    this.info = {};
+    this.invert = HANDEDNESS_INVERTED;  // set by the camera check (see setup.js)
+    this.allowSingle = true;            // until the camera check has confirmed the labels
+  }
+
+  setTestedHand(h) { this.testedHand = h; this.pinch.reset(); }
+  setPinchThresholds(th) { this.pinch.setThresholds(th); }
+
+  async start() {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error('The camera can only be used on a secure page (https:// or http://localhost).');
+    }
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, facingMode: 'user' },
+      audio: false,
+    });
+    this.video.srcObject = this.stream;
+    this.video.muted = true;
+    this.video.playsInline = true;
+    await this.video.play();
+
+    if (!landmarkerPromise) landmarkerPromise = loadLandmarker(this.video).catch((e) => { landmarkerPromise = null; throw e; });
+    const { lm, delegate, source, timings } = await landmarkerPromise;
+    this.landmarker = lm;
+
+    const track = this.stream.getVideoTracks()[0];
+    const st = track.getSettings ? track.getSettings() : {};
+    this.info = {
+      label: track.label || 'Webcam',
+      width: this.video.videoWidth || st.width,
+      height: this.video.videoHeight || st.height,
+      requestedFps: st.frameRate || null,
+      delegate,
+      timings,            // ms per frame for each processing option tried
+      modelSource: source,
+    };
+    this.running = true;
+    this._schedule();
+    return this.info;
+  }
+
+  stop() {
+    this.running = false;
+    if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+    this.video.srcObject = null;
+    this.latest = { present: false, u: 0.5, v: 0.5, pinch: false, t: 0 };
+  }
+
+  _schedule() {
+    if (!this.running) return;
+    // Poll every display frame; _frame() only runs detection when the camera
+    // has delivered a new image. (requestVideoFrameCallback is not used because
+    // it does not fire for a hidden <video> element in some browsers.)
+    requestAnimationFrame(() => this._frame());
+  }
+
+  /** Run hand detection on each new camera frame. */
+  _frame() {
+    if (!this.running) return;
+    try {
+      const v = this.video;
+      if (v.readyState >= 2 && v.currentTime !== this.lastVideoTime) {
+        this.lastVideoTime = v.currentTime;
+        // MediaPipe requires strictly increasing timestamps.
+        const now = Math.max(performance.now(), (this.landmarker._vbbtLastTs || 0) + 1);
+        this.landmarker._vbbtLastTs = now;
+        const res = this.landmarker.detectForVideo(v, now);
+        this._process(res, now);
+        this._drawPreview(res);
+      }
+    } catch (e) {
+      console.warn('Hand detection error', e);
+    }
+    this._schedule();
+  }
+
+  _process(res, now) {
+    this.fpsTimes.push(now);
+    while (this.fpsTimes.length && now - this.fpsTimes[0] > 2000) this.fpsTimes.shift();
+    const aspect = (this.video.videoWidth || 4) / (this.video.videoHeight || 3);
+    const { hand, all } = selectHand(res, this.testedHand, this.invert, this.allowSingle);
+    this.seq++;
+    this.lastLandmarks = hand ? hand.image : null;
+    if (!hand) {
+      this.latest = { present: false, u: this.latest.u, v: this.latest.v, pinch: this.latest.pinch, t: now, others: all.map((h) => h.label) };
+      return;
+    }
+    const ratio = pinchRatio(hand.world, hand.image, aspect);
+    const pinch = this.pinch.update(ratio);
+    const { u, v } = cursorFromLandmarks(hand.image);
+    this.latest = {
+      present: true, u, v, pinch, ratio, t: now,
+      palm: palmSize(hand.image, aspect),
+      label: hand.label, score: hand.score,
+      wrist: { u: 1 - hand.image[0].x, v: hand.image[0].y },
+      others: all.map((h) => h.label),
+      assumed: !!hand.assumed,
+    };
+  }
+
+  /** Measured detection rate over the last 2 s (frames per second). */
+  fps() {
+    const n = this.fpsTimes.length;
+    if (n < 2) return 0;
+    return (n - 1) / ((this.fpsTimes[n - 1] - this.fpsTimes[0]) / 1000);
+  }
+
+  /** Mean brightness of the camera image, 0 (black) to 255 (white). */
+  brightness() {
+    const v = this.video;
+    if (!v.videoWidth) return null;
+    if (!this._small) { this._small = document.createElement('canvas'); this._small.width = 64; this._small.height = 48; }
+    const ctx = this._small.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(v, 0, 0, 64, 48);
+    const d = ctx.getImageData(0, 0, 64, 48).data;
+    let s = 0;
+    for (let i = 0; i < d.length; i += 4) s += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    return s / (d.length / 4);
+  }
+
+  _drawPreview(res) {
+    const c = this.preview;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const w = c.width; const h = c.height;
+    ctx.save();
+    ctx.translate(w, 0); ctx.scale(-1, 1);          // mirror, like looking in a mirror
+    ctx.drawImage(this.video, 0, 0, w, h);
+    const { hand } = selectHand(res, this.testedHand, this.invert, this.allowSingle);
+    (res.landmarks || []).forEach((pts, i) => {
+      const tested = hand && hand.index === i;
+      ctx.strokeStyle = tested ? '#00e676' : '#ff9100';
+      ctx.lineWidth = 3;
+      for (const [a, b] of BONES) {
+        ctx.beginPath(); ctx.moveTo(pts[a].x * w, pts[a].y * h); ctx.lineTo(pts[b].x * w, pts[b].y * h); ctx.stroke();
+      }
+      ctx.fillStyle = tested ? (this.latest.pinch ? '#ffea00' : '#ffffff') : '#ff9100';
+      for (const k of [4, 8]) { ctx.beginPath(); ctx.arc(pts[k].x * w, pts[k].y * h, 5, 0, Math.PI * 2); ctx.fill(); }
+    });
+    ctx.restore();
+  }
+
+  /** Latest hand sample. Stale results (> 300 ms old) count as "hand not present". */
+  read(now = performance.now()) {
+    const l = this.latest;
+    const present = l.present && now - l.t < STALE_MS;
+    return { ...l, present, seq: this.seq };
+  }
+}
+
+return { CameraInput };
+})();
+
+// ===== setup.js =====
+const __m8 = (() => {
+/**
+ * setup.js — camera setup check and per-participant calibration.
+ *
+ * Steps (shown full-size on the stage):
+ *   1. Camera  — frame rate and image brightness (2 s)
+ *   2. Open hand — tested hand held open and still for 3 s; records the open-hand
+ *      pinch ratio and palm size (distance cue)
+ *   3. Pinch   — thumb and index together for 2 s; records the pinched ratio
+ *   4. Reach   — move the hand to the comfortable left/right/top/bottom limits
+ *      for 8 s of tracked time; defines the reach area mapped onto the box
+ *
+ * Returns a plain object that is stored with every trial run afterwards.
+ */
+const { median, percentile } = __m6;
+const { FPS_WARNING } = __m7;
+
+const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11],
+  [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
+
+const STEP_TIMEOUT = 45000;   // ms to wait for each hand step before giving up
+
+/** Distance cue from palm length as a fraction of image width. */
+function distanceHint(palm) {
+  if (palm == null) return 'unknown';
+  if (palm < 0.09) return 'too far';
+  if (palm > 0.24) return 'too close';
+  return 'ok';
+}
+
+function brightnessHint(b) {
+  if (b == null) return 'unknown';
+  if (b < 60) return 'too dark';
+  if (b > 210) return 'too bright';
+  return 'ok';
+}
+
+async function runSetupCheck({ cam, canvas, overlay, testedHand, signal }) {
+  const ctx = canvas.getContext('2d');
+  const handName = testedHand === 'left' ? 'LEFT' : 'RIGHT';
+  const result = { warnings: [] };
+
+  function show(title, lines = [], progress = null) {
+    overlay.hidden = false;
+    overlay.className = 'overlay setup';
+    overlay.innerHTML = '';
+    const box = document.createElement('div');
+    box.className = 'setup-box';
+    const h = document.createElement('div'); h.className = 'setup-title'; h.textContent = title; box.appendChild(h);
+    for (const l of lines) {
+      const p = document.createElement('div');
+      p.className = 'setup-line' + (l.cls ? ' ' + l.cls : '');
+      p.textContent = l.text ?? l;
+      box.appendChild(p);
+    }
+    if (progress != null) {
+      const bar = document.createElement('div'); bar.className = 'progress';
+      const fill = document.createElement('div'); fill.style.width = `${Math.round(progress * 100)}%`;
+      bar.appendChild(fill); box.appendChild(bar);
+    }
+    overlay.appendChild(box);
+  }
+
+  /** Draw the mirrored camera image filling the stage, with the hand skeleton. */
+  function drawCamera(extra) {
+    const W = canvas.width; const H = canvas.height;
+    const v = cam.video;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    if (!v.videoWidth) return;
+    const s = Math.min(W / v.videoWidth, H / v.videoHeight);
+    const w = v.videoWidth * s; const h = v.videoHeight * s;
+    const x0 = (W - w) / 2; const y0 = (H - h) / 2;
+    ctx.save();
+    ctx.translate(x0 + w, y0); ctx.scale(-1, 1);
+    ctx.drawImage(v, 0, 0, w, h);
+    ctx.restore();
+    const l = cam.read();
+    const lms = cam.lastLandmarks;
+    if (lms && l.present) {
+      ctx.strokeStyle = '#00e676'; ctx.lineWidth = 4;
+      for (const [a, b] of BONES) {
+        ctx.beginPath();
+        ctx.moveTo(x0 + (1 - lms[a].x) * w, y0 + lms[a].y * h);
+        ctx.lineTo(x0 + (1 - lms[b].x) * w, y0 + lms[b].y * h);
+        ctx.stroke();
+      }
+    }
+    if (extra) extra({ x0, y0, w, h });
+  }
+
+  /** Run a step until done() returns true; tick() is called every frame. */
+  function step(tick, timeout = STEP_TIMEOUT) {
+    return new Promise((resolve, reject) => {
+      const t0 = performance.now();
+      const frame = () => {
+        if (signal?.aborted) { reject(new Error('cancelled')); return; }
+        const now = performance.now();
+        let r;
+        try { r = tick(now - t0, now); } catch (e) { reject(e); return; }
+        if (r) { resolve(r); return; }
+        if (timeout && now - t0 > timeout) { reject(new Error('timeout')); return; }
+        requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    });
+  }
+
+  // ---- Step 1: camera ---------------------------------------------------------
+  const bright = [];
+  await step((el) => {
+    drawCamera();
+    if (el > 300) bright.push(cam.brightness());
+    show('Step 1 of 4 — Checking the camera', ['Please wait…'], Math.min(1, el / 2500));
+    return el > 2500 ? true : null;
+  });
+  result.fps = Math.round(cam.fps() * 10) / 10;
+  result.brightness = Math.round(median(bright.filter((b) => b != null)) ?? 0);
+  result.brightnessHint = brightnessHint(result.brightness);
+  if (result.fps < FPS_WARNING) result.warnings.push(`Low frame rate (${result.fps} fps). Close other programs and plug in the charger.`);
+  if (result.brightnessHint === 'too dark') result.warnings.push('The image is dark. Turn on a light in front of the participant.');
+  if (result.brightnessHint === 'too bright') result.warnings.push('The image is very bright. Avoid a window or lamp behind the participant.');
+
+  // ---- Step 2: open hand, still for 3 s ------------------------------------------
+  // Also checks MediaPipe's left/right labels on this laptop: the participant
+  // shows only the tested hand, so if the single visible hand keeps getting the
+  // opposite label for ~1 s, the labels are swapped (mirrored camera image).
+  cam.allowSingle = false;
+  let mismatch = 0; let swapped = false;
+  let openRatios = []; let palms = []; let wrists = []; let stableSince = null;
+  await step((el, now) => {
+    drawCamera();
+    const l = cam.read(now);
+    const lines = [`Hold up your ${handName} hand only, fingers open, palm facing the screen.`, 'Keep it still.'];
+    if (swapped) lines.push({ text: 'Note: left/right labels are swapped on this camera — corrected automatically.', cls: 'ok' });
+    if (!l.present) {
+      stableSince = null; openRatios = []; palms = []; wrists = [];
+      if (l.others?.length === 1 && !swapped) {
+        if (++mismatch > 30) { cam.invert = !cam.invert; swapped = true; mismatch = 0; }
+      } else mismatch = 0;
+      if (l.others?.length > 1) lines.push({ text: `Please show only your ${handName} hand.`, cls: 'warn' });
+      else if (!l.others?.length) lines.push({ text: 'No hand seen yet.', cls: 'warn' });
+      show('Step 2 of 4 — Show your open hand', lines, 0);
+      return null;
+    }
+    wrists.push(l.wrist); openRatios.push(l.ratio); palms.push(l.palm);
+    if (wrists.length > 20) { wrists.shift(); }
+    const jitter = Math.max(...wrists.map((w) => Math.hypot(w.u - wrists[0].u, w.v - wrists[0].v)));
+    const dist = distanceHint(l.palm);
+    if (dist === 'too far') lines.push({ text: 'Move a little CLOSER to the camera.', cls: 'warn' });
+    if (dist === 'too close') lines.push({ text: 'Move a little FURTHER from the camera.', cls: 'warn' });
+    const open = l.ratio > 0.5;
+    if (!open) lines.push({ text: 'Open your fingers.', cls: 'warn' });
+    if (jitter < 0.04 && open && dist === 'ok') {
+      if (stableSince == null) stableSince = now;
+    } else { stableSince = null; openRatios = openRatios.slice(-5); palms = palms.slice(-5); }
+    const prog = stableSince == null ? 0 : Math.min(1, (now - stableSince) / 3000);
+    show('Step 2 of 4 — Show your open hand', lines, prog);
+    return prog >= 1 ? true : null;
+  });
+  result.handednessInverted = cam.invert;
+  result.openRatio = median(openRatios);
+  result.palmSize = Math.round(median(palms) * 1000) / 1000;
+  result.distanceHint = distanceHint(result.palmSize);
+
+  // ---- Step 3: pinch for 2 s ----------------------------------------------------
+  let pinchRatios = []; let pinchSince = null;
+  await step((el, now) => {
+    drawCamera();
+    const l = cam.read(now);
+    const lines = ['Now touch your THUMB and INDEX finger tips together, like picking up a small block.', 'Hold the pinch.'];
+    const pinched = l.present && l.ratio < result.openRatio * 0.45;
+    if (!l.present) lines.push({ text: 'Hand not seen — keep it in view.', cls: 'warn' });
+    if (pinched) { if (pinchSince == null) pinchSince = now; pinchRatios.push(l.ratio); } else { pinchSince = null; pinchRatios = []; }
+    const prog = pinchSince == null ? 0 : Math.min(1, (now - pinchSince) / 2000);
+    show('Step 3 of 4 — Pinch', lines, prog);
+    return prog >= 1 ? true : null;
+  });
+  result.pinchRatio = median(pinchRatios);
+
+  // ---- Step 4: reach area (8 s of tracked movement) -------------------------------
+  const us = []; const vs = []; let tracked = 0; let last = null;
+  await step((el, now) => {
+    const l = cam.read(now);
+    if (l.present) {
+      if (last != null) tracked += now - last;
+      us.push(l.u); vs.push(l.v);
+    }
+    last = now;
+    drawCamera(({ x0, y0, w, h }) => {
+      ctx.fillStyle = 'rgba(255, 234, 0, 0.9)';
+      for (let i = Math.max(0, us.length - 400); i < us.length; i++) {
+        ctx.beginPath(); ctx.arc(x0 + us[i] * w, y0 + vs[i] * h, 4, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+    const prog = Math.min(1, tracked / 8000);
+    show('Step 4 of 4 — Reach', [
+      'Slowly move your hand as far LEFT and RIGHT, and as HIGH and LOW, as is comfortable.',
+      'Stay seated. Keep your hand in view.',
+      ...(l.present ? [] : [{ text: 'Hand not seen — keep it in view.', cls: 'warn' }]),
+    ], prog);
+    return prog >= 1 ? true : null;
+  });
+  const reach = { u0: percentile(us, 0.03), u1: percentile(us, 0.97), v0: percentile(vs, 0.03), v1: percentile(vs, 0.97) };
+  if (reach.u1 - reach.u0 < 0.15 || reach.v1 - reach.v0 < 0.12) {
+    result.warnings.push('The reach movement was very small, so the standard reach area is used.');
+    result.reach = null;
+  } else {
+    // Round for storage/readability
+    for (const k of Object.keys(reach)) reach[k] = Math.round(reach[k] * 1000) / 1000;
+    result.reach = reach;
+  }
+
+  result.openRatio = Math.round(result.openRatio * 1000) / 1000;
+  result.pinchRatio = Math.round(result.pinchRatio * 1000) / 1000;
+  result.completedAt = new Date().toISOString();
+
+  show('Camera check complete', [
+    { text: `Frame rate: ${result.fps} fps ${result.fps < FPS_WARNING ? '(LOW)' : '(good)'}`, cls: result.fps < FPS_WARNING ? 'warn' : 'ok' },
+    { text: `Lighting: ${result.brightnessHint}`, cls: result.brightnessHint === 'ok' ? 'ok' : 'warn' },
+    { text: `Distance: ${result.distanceHint}`, cls: result.distanceHint === 'ok' ? 'ok' : 'warn' },
+    ...result.warnings.map((w) => ({ text: w, cls: 'warn' })),
+  ]);
+  return result;
+}
+
+return { distanceHint, brightnessHint, runSetupCheck };
+})();
+
+// ===== storage.js =====
+const __m9 = (() => {
+/**
+ * storage.js — saving sessions in this browser (localStorage) and exporting them.
+ *
+ * Data never leaves the laptop unless the researcher downloads it.
+ * Saved per browser: one summary row per test trial, plus the full detail
+ * (events + raw samples) of the LAST trial only.
+ */
+const KEY_SESSIONS = 'vbbt.sessions.v1';
+const KEY_LAST = 'vbbt.lastTrial.v1';
+const KEY_CONSENT = 'vbbt.consent.v1';
+
+function readJSON(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
+function writeJSON(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { console.error('Storage failed', e); return false; }
+}
+
+function loadSessions() { return readJSON(KEY_SESSIONS, []); }
+
+/** Save a test trial summary row; returns false if storage is full/blocked. */
+function saveSession(row) {
+  const all = loadSessions();
+  all.push(row);
+  return writeJSON(KEY_SESSIONS, all);
+}
+
+function saveLastTrial(detail) {
+  if (!writeJSON(KEY_LAST, detail)) {
+    // Raw samples may not fit: keep the summary and events at least.
+    writeJSON(KEY_LAST, { ...detail, samples: [], samplesDropped: true });
+  }
+}
+function loadLastTrial() { return readJSON(KEY_LAST, null); }
+
+function clearAll() {
+  for (const k of [KEY_SESSIONS, KEY_LAST, KEY_CONSENT]) { try { localStorage.removeItem(k); } catch { /* ignore */ } }
+}
+
+/** Consent timestamps per participant ID. */
+function getConsent(pid) { return readJSON(KEY_CONSENT, {})[pid] || null; }
+function setConsent(pid, iso) {
+  const all = readJSON(KEY_CONSENT, {});
+  all[pid] = iso;
+  writeJSON(KEY_CONSENT, all);
+}
+
+/** Next trial number for a participant / hand / device (for test–retest analysis). */
+function nextTrialNumber(pid, hand, device) {
+  return loadSessions().filter((s) => s.participantId === pid && s.testedHand === hand && s.device === device).length + 1;
+}
+
+/** Flatten nested objects: {a:{b:1}} -> {"a.b":1} — used for CSV columns. */
+function flatten(obj, prefix = '', out = {}) {
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === 'object' && !Array.isArray(v)) flatten(v, key, out);
+    else out[key] = Array.isArray(v) ? JSON.stringify(v) : v;
+  }
+  return out;
+}
+
+function csvCell(v) {
+  if (v == null) return '';
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** All rows -> CSV text. Columns = union of all keys, in first-seen order. */
+function toCSV(rows) {
+  const flat = rows.map((r) => flatten(r));
+  const cols = [];
+  for (const r of flat) for (const k of Object.keys(r)) if (!cols.includes(k)) cols.push(k);
+  const lines = [cols.join(',')];
+  for (const r of flat) lines.push(cols.map((c) => csvCell(r[c])).join(','));
+  return lines.join('\r\n');
+}
+
+/** Ask the browser to save a text file. */
+function download(filename, text, type = 'text/plain') {
+  const blob = new Blob([text], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+return { loadSessions, saveSession, saveLastTrial, loadLastTrial, clearAll, getConsent, setConsent, nextTrialNumber, flatten, toCSV, download };
+})();
+
+// ===== app.js =====
+const __m0 = (() => {
+/**
+ * app.js — user interface, trial flow, rendering loop, saving and export.
+ *
+ * Trial flow:  idle → (consent) → waiting for hand → 3-2-1 countdown → running → results
+ */
+const { VBBTEngine } = __m1;
+const { Renderer } = __m2;
+const { OneEuroFilter } = __m3;
+const { MouseInput } = __m4;
+const { CameraInput } = __m5;
+const { pinchThresholds } = __m6;
+const { runSetupCheck } = __m8;
+const { loadSessions, saveSession, saveLastTrial, loadLastTrial, clearAll, getConsent, setConsent, nextTrialNumber, toCSV, download } = __m9;
+const { APP_VERSION, TEST_DURATION, PRACTICE_DURATION, FPS_WARNING, CONSENT_TITLE, CONSENT_TEXT, CONSENT_BUTTON } = __m7;
+
+const $ = (id) => document.getElementById(id);
+const ui = {
+  pid: $('pid'), age: $('age'), sex: $('sex'), dominant: $('dominant'), notes: $('notes'),
+  device: $('device'), connect: $('connect'), devStatus: $('devStatus'), preview: $('preview'), video: $('video'),
+  setupBtn: $('setupBtn'), calibStatus: $('calibStatus'),
+  reach: $('reach'), reachOut: $('reachOut'), sens: $('sens'), sensOut: $('sensOut'),
+  practice: $('practice'), highlight: $('highlight'), start: $('start'), abort: $('abort'), formMsg: $('formMsg'),
+  hudTime: $('hudTime'), hudScore: $('hudScore'), hudTrack: $('hudTrack'),
+  stage: $('stage'), overlay: $('overlay'),
+  results: $('results'), resultsTitle: $('resultsTitle'), resScore: $('resScore'), resFlag: $('resFlag'), resTable: $('resTable'),
+  sessionsBody: document.querySelector('#sessions tbody'),
+  dlCsv: $('dlCsv'), dlJson: $('dlJson'), clearData: $('clearData'),
+  consent: $('consent'),
+};
+const fieldsets = ['formParticipant', 'formDevice'].map($);
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const renderer = new Renderer(ui.stage);
+const state = {
+  phase: 'idle',          // idle | setup | wait | countdown | running | done
+  input: null,            // MouseInput | CameraInput
+  inputInfo: null,
+  calib: null,            // result of the camera check, per participant + hand
+  engine: null,
+  idleEngine: new VBBTEngine({ testedHand: 'right' }),  // static pile shown when idle
+  filters: { u: new OneEuroFilter(1.0, 4.0), v: new OneEuroFilter(1.0, 4.0) },
+  lastSeq: -1, lastUpdate: 0, wasPresent: false,
+  t0: 0, countdownStart: 0, handSince: null,
+  trial: null,            // metadata of the running trial
+  camSamples: 0,          // new camera frames during the running trial
+  setupAbort: null,
+};
+
+ui.video.hidden = true;
+$('version').textContent = APP_VERSION;
+
+const testedHand = () => document.querySelector('input[name=hand]:checked').value;
+
+function setMsg(text, cls = '') { ui.formMsg.textContent = text; ui.formMsg.className = 'status ' + cls; }
+function setStatus(el, text, cls = '') { el.textContent = text; el.className = 'status ' + cls; }
+
+function showOverlay(html, cls = '') {
+  ui.overlay.className = 'overlay ' + cls;
+  ui.overlay.innerHTML = html;
+  ui.overlay.hidden = !html;
+}
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ---------------------------------------------------------------------------
+// Device connection
+// ---------------------------------------------------------------------------
+async function connect() {
+  disconnect();
+  const kind = ui.device.value;
+  ui.connect.disabled = true;
+  setStatus(ui.devStatus, kind === 'camera' ? 'Starting camera and loading the hand model… (first time can take a minute)' : 'Connecting…');
+  try {
+    if (kind === 'mouse') {
+      state.input = new MouseInput(ui.stage);
+      state.inputInfo = await state.input.start();
+      setStatus(ui.devStatus, 'Mouse ready: move over the box, hold the button to pinch.', 'ok');
+    } else {
+      state.input = new CameraInput({ video: ui.video, preview: ui.preview, testedHand: testedHand() });
+      state.inputInfo = await state.input.start();
+      ui.preview.hidden = false;
+      const i = state.inputInfo;
+      setStatus(ui.devStatus, `Camera ready (${i.width}×${i.height}, ${i.delegate} processing, ~${i.timings[i.delegate]} ms per frame).`, 'ok');
+      applyPinchSettings();
+    }
+  } catch (e) {
+    console.warn(e);
+    state.input = null;
+    setStatus(ui.devStatus, friendlyError(e), 'err');
+  }
+  ui.connect.disabled = false;
+  ui.connect.textContent = state.input ? 'Reconnect' : 'Connect';
+  ui.setupBtn.disabled = !(state.input && state.input.kind === 'camera');
+}
+
+function disconnect() {
+  if (state.input) state.input.stop();
+  state.input = null;
+  ui.preview.hidden = true;
+  ui.setupBtn.disabled = true;
+}
+
+function friendlyError(e) {
+  const n = e?.name || '';
+  if (n === 'NotAllowedError') return 'Camera permission was refused. Click the camera icon in the address bar, allow the camera, then press Connect again.';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'No camera was found on this computer.';
+  if (n === 'NotReadableError') return 'The camera is being used by another program (e.g. Zoom/Teams). Close it and press Connect again.';
+  return e?.message || String(e);
+}
+
+function applyPinchSettings() {
+  if (state.input?.kind !== 'camera') return;
+  const calib = state.calib ? { open: state.calib.openRatio, pinch: state.calib.pinchRatio } : null;
+  state.input.setPinchThresholds(pinchThresholds(calib, +ui.sens.value));
+}
+
+function resetCalibration(reason) {
+  if (!state.calib) return;
+  state.calib = null;
+  if (state.input?.kind === 'camera') state.input.allowSingle = true;
+  applyPinchSettings();
+  setStatus(ui.calibStatus, `Not calibrated (${reason}). Please run the camera check again.`, 'warn');
+}
+
+// ---------------------------------------------------------------------------
+// Hand position -> world coordinates (cm)
+// ---------------------------------------------------------------------------
+
+/** Default reach area (fraction of the mirrored camera image) when not calibrated. */
+const DEFAULT_REACH = { u0: 0.2, u1: 0.8, v0: 0.25, v1: 0.8 };
+const BOX_X0 = 0.8; const BOX_X1 = 52.9;   // inner box edges (cm)
+const REACH_Y0 = 0; const REACH_Y1 = 26;   // vertical range (cm) mapped to the reach area
+
+function currentReach() {
+  const r = state.calib?.reach || DEFAULT_REACH;
+  const k = +ui.reach.value / 100;           // >1 = larger area = more movement needed
+  const cu = (r.u0 + r.u1) / 2; const cv = (r.v0 + r.v1) / 2;
+  const hu = (r.u1 - r.u0) / 2 * k; const hv = (r.v1 - r.v0) / 2 * k;
+  return { u0: cu - hu, u1: cu + hu, v0: cv - hv, v1: cv + hv };
+}
+
+/** Read the input and convert to {present, x, y, pinch, seq} in world cm. */
+function readHand(now) {
+  const inp = state.input;
+  if (!inp) return null;
+  const r = inp.read(now);
+  if (inp.kind === 'mouse') {
+    const w = renderer.toWorld(r.u, r.v);
+    return { present: r.present, x: w.x, y: w.y, pinch: r.pinch, seq: r.seq, raw: r };
+  }
+  // Camera: smooth u, v with the One Euro filter, then map the reach area onto the box.
+  if (!r.present) { state.wasPresent = false; return { present: false, x: null, y: null, pinch: false, seq: r.seq, raw: r }; }
+  if (!state.wasPresent) { state.filters.u.reset(); state.filters.v.reset(); }
+  state.wasPresent = true;
+  const ts = r.t / 1000;
+  const u = state.filters.u.filter(r.u, ts);
+  const v = state.filters.v.filter(r.v, ts);
+  const R = currentReach();
+  const fx = (u - R.u0) / (R.u1 - R.u0);
+  const fy = (R.v1 - v) / (R.v1 - R.v0);
+  const x = Math.max(-4, Math.min(57.7, BOX_X0 + fx * (BOX_X1 - BOX_X0)));
+  const y = Math.max(-1, Math.min(33, REACH_Y0 + fy * (REACH_Y1 - REACH_Y0)));
+  return { present: true, x, y, pinch: r.pinch, seq: r.seq, raw: r };
+}
+
+// ---------------------------------------------------------------------------
+// Trial flow
+// ---------------------------------------------------------------------------
+function validateForm() {
+  const pid = ui.pid.value.trim();
+  if (!pid) return 'Please enter the Participant ID.';
+  const age = +ui.age.value;
+  if (!ui.age.value || !(age >= 18 && age <= 100)) return 'Please enter an age between 18 and 100.';
+  if (!ui.sex.value) return 'Please select sex.';
+  if (!ui.dominant.value) return 'Please select the dominant hand.';
+  return null;
+}
+
+async function askConsent(pid) {
+  const existing = getConsent(pid);
+  if (existing) return existing;
+  $('consentTitle').textContent = CONSENT_TITLE;
+  const box = $('consentText'); box.innerHTML = '';
+  for (const para of CONSENT_TEXT) { const p = document.createElement('p'); p.textContent = para; box.appendChild(p); }
+  $('consentAgree').textContent = CONSENT_BUTTON;
+  ui.consent.returnValue = '';
+  ui.consent.showModal();
+  await new Promise((res) => ui.consent.addEventListener('close', res, { once: true }));
+  if (ui.consent.returnValue !== 'agree') return null;
+  const ts = new Date().toISOString();
+  setConsent(pid, ts);
+  return ts;
+}
+
+async function startTrial() {
+  const err = validateForm();
+  if (err) { setMsg(err, 'warn'); return; }
+  setMsg('');
+  const pid = ui.pid.value.trim();
+  const consentTs = await askConsent(pid);
+  if (!consentTs) { setMsg('The trial was not started because consent was not given.', 'warn'); return; }
+
+  if (!state.input || state.input.kind !== ui.device.value) await connect();
+  if (!state.input) { setMsg('Please connect the hand-tracking input first.', 'warn'); return; }
+  if (state.input.kind === 'camera') state.input.setTestedHand(testedHand());
+
+  const practice = ui.practice.checked;
+  const hand = testedHand();
+  const device = state.input.kind;
+  state.trial = {
+    practice,
+    duration: practice ? PRACTICE_DURATION : TEST_DURATION,
+    meta: {
+      sessionId: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)),
+      timestamp: null,
+      appVersion: APP_VERSION,
+      participantId: pid,
+      age: +ui.age.value,
+      sex: ui.sex.value,
+      dominantHand: ui.dominant.value,
+      testedHand: hand,
+      notes: ui.notes.value.trim(),
+      device,
+      trialType: practice ? 'practice' : 'test',
+      trialNumber: practice ? null : nextTrialNumber(pid, hand, device),
+      consentTimestamp: consentTs,
+    },
+  };
+  state.engine = new VBBTEngine({ testedHand: hand, duration: state.trial.duration });
+  state.phase = 'wait';
+  state.handSince = null;
+  ui.results.hidden = true;
+  setRunning(true);
+  ui.stage.scrollIntoView({ block: 'center' });
+}
+
+function setRunning(on) {
+  fieldsets.forEach((f) => { f.disabled = on; });
+  ui.start.disabled = on;
+  ui.practice.disabled = on;
+  ui.abort.disabled = !on;
+}
+
+function abortTrial(reason = 'Trial aborted — not saved.') {
+  if (state.setupAbort) { state.setupAbort.abort(); return; }
+  if (!['wait', 'countdown', 'running'].includes(state.phase)) return;
+  state.phase = 'idle';
+  state.engine = null;
+  setRunning(false);
+  showOverlay(`<div class="msg">${esc(reason)}</div>`);
+  setTimeout(() => { if (state.phase === 'idle') showOverlay(''); }, 2500);
+}
+
+function finishTrial() {
+  const e = state.engine;
+  const tr = state.trial;
+  const sum = e.summary();
+  const cam = state.input?.kind === 'camera';
+  const inputFps = cam ? Math.round((state.camSamples / tr.duration) * 10) / 10 : null;
+  const c = state.calib;
+  const row = {
+    ...tr.meta,
+    ...sum,
+    inputFps,
+    lowFpsFlag: cam ? inputFps < FPS_WARNING : false,
+    setup: {
+      cameraResolution: cam ? `${state.inputInfo.width}x${state.inputInfo.height}` : null,
+      processing: cam ? state.inputInfo.delegate : null,
+      processingMsPerFrame: cam ? state.inputInfo.timings : null,
+      calibrated: !!c,
+      checkFps: c?.fps ?? null,
+      brightness: c?.brightness ?? null,
+      lighting: c?.brightnessHint ?? null,
+      palmSize: c?.palmSize ?? null,
+      distance: c?.distanceHint ?? null,
+      pinchOpenRatio: c?.openRatio ?? null,
+      pinchClosedRatio: c?.pinchRatio ?? null,
+      pinchSensitivity: +ui.sens.value,
+      pinchThresholds: cam ? pinchThresholds(c ? { open: c.openRatio, pinch: c.pinchRatio } : null, +ui.sens.value) : null,
+      reachScale: +ui.reach.value,
+      reachArea: cam ? currentReach() : null,
+      calibratedAt: c?.completedAt ?? null,
+      handednessInverted: cam ? state.input.invert : null,
+      handSelection: cam ? (state.input.allowSingle ? 'label, or the only visible hand' : 'label (checked)') : null,
+      screen: `${screen.width}x${screen.height}@${window.devicePixelRatio || 1}`,
+      userAgent: navigator.userAgent,
+    },
+  };
+  // Round the reach area/thresholds for readability.
+  for (const obj of [row.setup.reachArea, row.setup.pinchThresholds]) {
+    if (obj) for (const k of Object.keys(obj)) obj[k] = Math.round(obj[k] * 1000) / 1000;
+  }
+
+  state.phase = 'done';
+  setRunning(false);
+  if (!tr.practice) {
+    const ok = saveSession(row);
+    saveLastTrial({ summary: row, events: e.events, samples: e.samples });
+    if (!ok) setMsg('WARNING: the browser storage is full. Download the CSV now and clear old data.', 'warn');
+  }
+  showOverlay(`<div class="msg">Time is up! ${tr.practice ? 'Practice finished.' : ''}</div>`);
+  setTimeout(() => { if (state.phase === 'done') showOverlay(''); }, 3000);
+  showResults(row, tr.practice);
+  renderSessions();
+}
+
+// ---------------------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------------------
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (state.phase === 'setup') return;   // the setup check draws on the stage itself
+
+  const hand = readHand(now);
+  const isCam = state.input?.kind === 'camera';
+  const fresh = hand && (hand.seq !== state.lastSeq);
+
+  // Tracking indicator
+  if (!hand) { ui.hudTrack.textContent = '–'; ui.hudTrack.className = 'hud-value track'; }
+  else if (hand.present) { ui.hudTrack.textContent = 'Tracked'; ui.hudTrack.className = 'hud-value track ok'; }
+  else { ui.hudTrack.textContent = 'Not seen'; ui.hudTrack.className = 'hud-value track lost'; }
+
+  const name = testedHand() === 'left' ? 'LEFT' : 'RIGHT';
+  if (state.phase === 'wait') {
+    if (hand?.present) {
+      if (state.handSince == null) state.handSince = now;
+      if (now - state.handSince > 600) { state.phase = 'countdown'; state.countdownStart = now; }
+    } else state.handSince = null;
+    showOverlay(state.input?.kind === 'mouse'
+      ? '<div class="msg">Move the mouse over the box to begin</div>'
+      : `<div class="msg">Show your ${name} hand to the camera</div>`);
+  } else if (state.phase === 'countdown') {
+    const left = 3 - Math.floor((now - state.countdownStart) / 1000);
+    if (left <= 0) {
+      state.phase = 'running';
+      state.t0 = now;
+      state.lastSeq = hand ? hand.seq : -1;
+      state.lastUpdate = now;
+      state.camSamples = 0;
+      state.trial.meta.timestamp = new Date().toISOString();
+      state.engine.log('start', { duration: state.trial.duration });
+      showOverlay('');
+    } else showOverlay(`<div class="count">${left}</div>`);
+  }
+
+  if (state.phase === 'running') {
+    const t = (now - state.t0) / 1000;
+    // Camera: update on every new camera frame (or every 50 ms if frames stop arriving).
+    if (!isCam || fresh || now - state.lastUpdate > 50 || t >= state.trial.duration) {
+      if (isCam && fresh) state.camSamples++;
+      state.engine.update(t, hand || { present: false });
+      state.lastUpdate = now;
+    }
+    ui.hudTime.textContent = Math.max(0, Math.ceil(state.trial.duration - t));
+    ui.hudScore.textContent = state.engine.score();
+    if (state.engine.finished) finishTrial();
+  } else if (state.phase !== 'done') {
+    ui.hudTime.textContent = ui.practice.checked ? PRACTICE_DURATION : TEST_DURATION;
+    if (state.phase === 'idle') ui.hudScore.textContent = '0';
+  }
+  if (hand) state.lastSeq = hand.seq;
+
+  const eng = state.engine || state.idleEngine;
+  if (!state.engine && state.idleEngine.testedHand !== testedHand()) state.idleEngine = new VBBTEngine({ testedHand: testedHand() });
+  renderer.draw(eng, {
+    cursor: hand && hand.x != null ? { x: hand.x, y: hand.y, pinch: hand.pinch, present: hand.present }
+      : (eng.cursor ? { ...eng.cursor, present: false, pinch: false } : null),
+    highlight: ui.highlight.checked && state.phase === 'running',
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Setup check
+// ---------------------------------------------------------------------------
+async function runSetup() {
+  if (state.input?.kind !== 'camera') return;
+  state.input.setTestedHand(testedHand());
+  state.phase = 'setup';
+  state.setupAbort = new AbortController();
+  setRunning(true);
+  ui.start.disabled = true;
+  ui.stage.scrollIntoView({ block: 'center' });
+  try {
+    const res = await runSetupCheck({
+      cam: state.input, canvas: ui.stage, overlay: ui.overlay, testedHand: testedHand(), signal: state.setupAbort.signal,
+    });
+    state.calib = { ...res, participantId: ui.pid.value.trim(), hand: testedHand() };
+    applyPinchSettings();
+    const warn = res.warnings.length > 0;
+    setStatus(ui.calibStatus, `Calibrated for ${state.calib.participantId || 'this participant'}, ${testedHand()} hand. ` +
+      `${res.fps} fps, lighting ${res.brightnessHint}, distance ${res.distanceHint}.` + (warn ? ' See warnings.' : ''), warn ? 'warn' : 'ok');
+    await new Promise((r) => setTimeout(r, 3500));
+  } catch (e) {
+    if (state.input?.kind === 'camera') state.input.allowSingle = true;   // labels not confirmed
+    const msg = e.message === 'cancelled' ? 'Camera check cancelled.' : e.message === 'timeout'
+      ? 'Camera check timed out — the hand was not seen clearly. Check lighting and distance, then try again.' : friendlyError(e);
+    setStatus(ui.calibStatus, msg, 'warn');
+  }
+  state.setupAbort = null;
+  state.phase = 'idle';
+  showOverlay('');
+  setRunning(false);
+  renderer.resize();
+}
+
+// ---------------------------------------------------------------------------
+// Results and saved sessions
+// ---------------------------------------------------------------------------
+const RESULT_ROWS = [
+  ['Blocks per minute', 'blocksPerMinute'],
+  ['Grasp attempts', 'graspAttempts'],
+  ['Successful grasps', 'successfulGrasps'],
+  ['Missed grasps', 'missedGrasps'],
+  ['Failed releases (dropped on pick-up side)', 'failedReleases'],
+  ['Blocks returned to pick-up side', 'returns'],
+  ['Time to first transfer (s)', 'timeToFirstTransfer'],
+  ['Transfer cycle time, mean (s)', 'cycleTimeMean'],
+  ['Transfer cycle time, SD (s)', 'cycleTimeSD'],
+  ['Carry path length, mean (cm)', 'carryPathMean'],
+  ['Carry speed, mean (cm/s)', 'carrySpeedMean'],
+  ['Peak speed (cm/s)', 'peakSpeed'],
+  ['Clearance above partition, mean (cm)', 'clearanceMean'],
+  ['Tracking-loss episodes', 'trackingLossEpisodes'],
+  ['Tracking lost, total (s)', 'trackingLostTime'],
+  ['Forced releases (tracking loss)', 'forcedReleases'],
+  ['Camera frame rate (fps)', 'inputFps'],
+];
+
+function showResults(row, practice) {
+  ui.results.hidden = false;
+  ui.resultsTitle.textContent = practice ? 'Practice result (not saved)' : `Result — ${row.participantId}, ${row.testedHand} hand, trial ${row.trialNumber}`;
+  ui.resScore.textContent = row.score;
+  ui.resFlag.hidden = !row.lowFpsFlag;
+  ui.resFlag.textContent = row.lowFpsFlag ? `Low camera frame rate (${row.inputFps} fps < ${FPS_WARNING}). Consider repeating this trial.` : '';
+  ui.resTable.innerHTML = '';
+  for (const [label, key] of RESULT_ROWS) {
+    if (key === 'inputFps' && row.inputFps == null) continue;
+    const tr = document.createElement('tr');
+    const a = document.createElement('td'); a.textContent = label;
+    const b = document.createElement('td'); b.textContent = row[key] == null ? '–' : row[key];
+    tr.append(a, b); ui.resTable.appendChild(tr);
+  }
+  ui.results.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderSessions() {
+  const rows = loadSessions().slice().reverse();
+  ui.sessionsBody.innerHTML = '';
+  if (!rows.length) {
+    const tr = document.createElement('tr'); const td = document.createElement('td');
+    td.colSpan = 10; td.textContent = 'No sessions saved yet.'; tr.appendChild(td); ui.sessionsBody.appendChild(tr);
+    return;
+  }
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const d = r.timestamp ? new Date(r.timestamp) : null;
+    const cells = [
+      d ? d.toLocaleString() : '', r.participantId, r.age, r.testedHand, r.device, r.trialNumber,
+      r.score, r.blocksPerMinute, r.inputFps ?? '–', r.lowFpsFlag ? 'Low FPS' : '',
+    ];
+    for (const c of cells) { const td = document.createElement('td'); td.textContent = c ?? ''; tr.appendChild(td); }
+    ui.sessionsBody.appendChild(tr);
+  }
+}
+
+const stamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+ui.connect.addEventListener('click', connect);
+ui.device.addEventListener('change', () => { disconnect(); setStatus(ui.devStatus, 'Not connected'); ui.connect.textContent = 'Connect'; });
+ui.setupBtn.addEventListener('click', runSetup);
+ui.start.addEventListener('click', startTrial);
+ui.abort.addEventListener('click', () => abortTrial());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') abortTrial(); });
+
+ui.reach.addEventListener('input', () => { ui.reachOut.textContent = ui.reach.value + '%'; });
+ui.sens.addEventListener('input', () => { ui.sensOut.textContent = ui.sens.value; applyPinchSettings(); });
+ui.pid.addEventListener('change', () => resetCalibration('participant changed'));
+document.querySelectorAll('input[name=hand]').forEach((r) => r.addEventListener('change', () => {
+  if (state.input?.kind === 'camera') state.input.setTestedHand(testedHand());
+  resetCalibration('tested hand changed');
+}));
+ui.practice.addEventListener('change', () => { ui.hudTime.textContent = ui.practice.checked ? PRACTICE_DURATION : TEST_DURATION; });
+
+ui.dlCsv.addEventListener('click', () => {
+  const rows = loadSessions();
+  if (!rows.length) { setMsg('There are no saved sessions yet.', 'warn'); return; }
+  download(`vbbt_sessions_${stamp()}.csv`, toCSV(rows), 'text/csv');
+});
+ui.dlJson.addEventListener('click', () => {
+  const last = loadLastTrial();
+  if (!last) { setMsg('No test trial has been saved yet.', 'warn'); return; }
+  download(`vbbt_${last.summary.participantId}_${last.summary.testedHand}_trial${last.summary.trialNumber}_${stamp()}.json`,
+    JSON.stringify(last, null, 1), 'application/json');
+});
+ui.clearData.addEventListener('click', () => {
+  const n = loadSessions().length;
+  if (!confirm(`Delete ALL ${n} saved sessions and consent records from this browser?\n\nDownload the CSV first if you need the data. This cannot be undone.`)) return;
+  clearAll();
+  renderSessions();
+  setMsg('All saved data was deleted from this browser.', 'ok');
+});
+
+window.addEventListener('resize', () => renderer.resize());
+new ResizeObserver(() => renderer.resize()).observe(ui.stage);
+
+renderSessions();
+requestAnimationFrame(frame);
+
+// Offline support: cache the app after the first visit (https or localhost only).
+if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:' && !window.VBBT_SINGLE_FILE) {
+  navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('Service worker not registered', e));
+}
+
+// Exposed for automated tests and debugging in the browser console.
+window.vbbt = { state, renderer };
+
+return {  };
+})();
+
+</script>
+</body>
+</html>

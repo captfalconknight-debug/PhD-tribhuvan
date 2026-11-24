@@ -517,7 +517,7 @@ renderSessions();
 requestAnimationFrame(frame);
 
 // Offline support: cache the app after the first visit (https or localhost only).
-if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:') {
+if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:' && !window.VBBT_SINGLE_FILE) {
   navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('Service worker not registered', e));
 }
 
