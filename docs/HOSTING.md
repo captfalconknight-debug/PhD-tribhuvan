@@ -1,5 +1,10 @@
 # Putting the VBBT online (GitHub Pages), step by step
 
+> **This project:** repository `captfalconknight-debug/PhD-tribhuvan` (code already uploaded).
+> Web address once Pages is switched on: **https://captfalconknight-debug.github.io/PhD-tribhuvan/**
+> Remaining steps: make the repository **public** (Step 2, item 3: Settings → General → Danger Zone →
+> Change visibility) and switch on Pages (Step 4).
+
 GitHub Pages hosts the app for free over **https**, which the camera needs. Every laptop can then open it from one web address, and it keeps working offline after the first visit.
 
 **Cost:** free. **Time:** about 20 minutes the first time.

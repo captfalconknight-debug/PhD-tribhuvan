@@ -9,7 +9,7 @@ Research prototype for the PhD project "Non-immersive virtual reality with optic
 ## 1. Running it
 
 ### Online (recommended)
-Open the GitHub Pages address, e.g. `https://<your-github-name>.github.io/vbbt/`, in **Google Chrome** or **Microsoft Edge**. The first visit downloads about 30 MB (the hand-tracking model). After that the app also works **offline** on that laptop.
+Open **https://captfalconknight-debug.github.io/PhD-tribhuvan/** in **Google Chrome** or **Microsoft Edge**. The first visit downloads about 30 MB (the hand-tracking model). After that the app also works **offline** on that laptop.
 
 ### On one laptop without internet hosting
 1. Install Python 3 (https://www.python.org/downloads/).
@@ -22,7 +22,7 @@ Open the GitHub Pages address, e.g. `https://<your-github-name>.github.io/vbbt/`
 > The camera only works on `https://` pages or on `http://localhost`. Double-clicking `index.html` (`file://`) does **not** work.
 
 ### Single-file version
-`dist/vbbt.html` holds all the app code in one file. On the hosted site it is at `.../vbbt/dist/vbbt.html`. Copied anywhere else on its own, it still works in mouse mode. Webcam mode then downloads MediaPipe from the internet (jsDelivr CDN) because the bundled model files are not next to it. To rebuild it after editing the code:
+`dist/vbbt.html` holds all the app code in one file. On the hosted site it is at `https://captfalconknight-debug.github.io/PhD-tribhuvan/dist/vbbt.html`. Copied anywhere else on its own, it still works in mouse mode. Webcam mode then downloads MediaPipe from the internet (jsDelivr CDN) because the bundled model files are not next to it. To rebuild it after editing the code:
 ```bash
 node scripts/build-single.js
 ```
