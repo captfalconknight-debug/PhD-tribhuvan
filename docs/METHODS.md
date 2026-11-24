@@ -1,6 +1,6 @@
 # Virtual Box and Block Test (VBBT): rules and metric definitions
 
-This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.1.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
+This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.2.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
 
 ---
 
@@ -46,7 +46,7 @@ The app has two display modes, chosen before a trial and recorded with it (`view
 
 **Processing back-end.** When the camera is connected, the model is created with both the GPU (WebGL) and CPU (XNNPACK) back-ends. Each is timed on five frames of the live video, and the faster one is kept. The chosen back-end and its time per frame are recorded with every trial.
 
-**Tested-hand selection.** Only the hand whose label matches the tested hand is used. Whether MediaPipe's labels refer to the participant's own hand depends on whether the camera image is mirrored. This is checked once per laptop during the camera check (Section 3): if the only visible hand keeps the opposite label for about 1 second, the labels are treated as swapped. The result is recorded (`setup.handednessInverted`). Before the camera check has been done, a single visible hand is used even if its label does not match (`setup.handSelection`).
+**Tested-hand selection.** Only the hand whose label matches the tested hand is used. Whether MediaPipe's labels refer to the participant's own hand depends on whether the camera image is mirrored. This is checked once per laptop during the camera check (Section 3): if the only visible hand keeps the opposite label for about 1 second, the labels are treated as swapped. The result is recorded (`setup.handednessInverted`). Before the camera check has been done, a single visible hand is used even if its label does not match (`setup.handSelection`). *Hand continuity:* MediaPipe can flip the left/right label for a frame or two during fast movement. If no hand carries the tested label, but a visible hand's wrist is within 0.12 (normalised image units) of the tested hand's wrist position seen within the last 0.5 s, that hand is still followed.
 
 **Cursor position.** The cursor is the midpoint between the thumb tip (landmark 4) and the index fingertip (landmark 8) in image coordinates, mirrored horizontally (*u* = 1 − *x*) so that movement on screen matches a mirror.
 
@@ -68,9 +68,12 @@ The reach area comes from the participant's calibration (Section 3). If no calib
 The pinch state uses **hysteresis**: the hand is "pinched" when the ratio falls below the *close* threshold, and "open" again only when it rises above the higher *open* threshold. This stops the state flickering near a single threshold.
 
 - *Calibrated thresholds:* with *R*_open the median ratio with the hand open and *R*_pinch the median ratio while pinching (Section 3), and *r* = *R*_open − *R*_pinch:
-  close = *R*_pinch + 0.35*r*, open = *R*_pinch + 0.55*r*.
-- *Default thresholds (no calibration):* close = 0.30, open = 0.45.
-- *Pinch-sensitivity slider (1–10, default 5):* both thresholds are multiplied by 1 + 0.08 × (sensitivity − 5). Higher values make a pinch easier to detect.
+  close = *R*_pinch + 0.50*r*, open = *R*_pinch + 0.70*r*.
+  A pinch is therefore recognised before the fingertips fully touch, and the hand must open clearly to let go.
+- *Default thresholds (no calibration):* close = 0.35, open = 0.50.
+- *Pinch-sensitivity slider (1–10, default 5):* both thresholds are multiplied by 1 + 0.12 × (sensitivity − 5). Higher values make a pinch easier to detect and hold more firmly.
+- *Smoothing and release delay:* the ratio is smoothed with an exponential moving average (weight 0.6 on the newest frame). The pinch closes on the first frame in which the raw or smoothed ratio falls below *close*. It opens only after the smoothed ratio has stayed above *open* for **3 consecutive camera frames** (about 100 ms at 30 fps). A held block is therefore not dropped by a brief flicker of the landmarks; the pinch has to be genuinely released.
+- *Live pinch meter:* the camera preview shows the smoothed ratio as a bar, with the close (green) and open (red) thresholds and the detected state. This helps the assessor confirm detection and choose the sensitivity.
 
 ## 3. Camera check and calibration (before testing)
 
@@ -78,7 +81,7 @@ Run once per participant and tested hand, before the trials. The stage shows the
 
 1. **Camera (2.5 s):** the detection frame rate and the mean image brightness (0–255, from a 64 × 48 down-sampled image) are measured. Brightness below 60 is flagged as too dark and above 210 as too bright. A frame rate below 25 fps is flagged.
 2. **Open hand:** the participant holds up only the tested hand, fingers open (pinch ratio > 0.5), palm towards the screen. It must be held still (wrist movement < 0.04 in normalised image coordinates over the last 20 frames) and at an acceptable distance for 3 s continuously. The distance cue is the palm length (wrist to middle MCP) as a fraction of image width: < 0.09 is too far, > 0.24 is too close. The median open-hand ratio and palm size are recorded. The left/right label check (Section 2) happens in this step.
-3. **Pinch:** the participant touches thumb and index tips together for 2 s continuously (ratio < 0.45 × open ratio). The median pinch ratio is recorded.
+3. **Pinch:** the participant touches thumb and index tips together for 2 s continuously (ratio < 0.6 × open ratio). The median pinch ratio is recorded.
 4. **Reach:** the participant moves the hand slowly as far left, right, up and down as is comfortable while seated, for 8 s of tracked time. The reach area is the 3rd to 97th percentile of the cursor positions on each axis. If the movement covers less than 15 % of the image width or 12 % of its height, the default reach area is used and a warning is shown.
 
 All camera-check results are stored with every trial that follows (columns `setup.*`).
@@ -95,7 +98,7 @@ All camera-check results are stored with every trial that follows (columns `setu
 
 **Releasing.** Opening the pinch releases the block. It falls under gravity (981 cm/s², simulated in steps of ≤ 1/240 s) and comes to rest on the highest surface below it: the box floor, another block, or the partition top. If it is released overlapping other blocks, it is first placed on top of them. A block that lands on the **partition top** slides off horizontally (40 cm/s) towards the side its centre is on (to the source side if the centre is exactly over the middle), then falls into that compartment.
 
-**Tracking loss.** If the tested hand is not detected (or no new detection has arrived for 300 ms), tracking is lost. A held block stays held for up to **250 ms**. If tracking has not returned by then, the block is force-released and falls as above. Both the loss episode and the forced release are logged.
+**Tracking loss.** If the tested hand is not detected (or no new detection has arrived for 300 ms), tracking is lost. A held block stays held for up to **500 ms**. If tracking has not returned by then, the block is force-released and falls as above. Both the loss episode and the forced release are logged.
 
 **Depth simulation (2D view only; in the 3D view all blocks are shown and none are hidden).** Only three layers of blocks are drawn per compartment:
 
@@ -127,7 +130,7 @@ All times are in seconds, distances in virtual cm, speeds in virtual cm/s.
 | `failedReleases` | Blocks picked up from the source side and released on the source side. |
 | `returns` | Blocks picked up from the target side and released on the source side. |
 | `repositions` | Blocks picked up from the target side and released on the target side. |
-| `forcedReleases` | Releases forced by tracking loss (> 250 ms). |
+| `forcedReleases` | Releases forced by tracking loss (> 500 ms). |
 | `timeToFirstTransfer` | Time from trial start to the first transfer release. |
 | `cycleTimeMean`, `cycleTimeSD` | Mean and sample SD of the intervals between consecutive transfer releases (needs ≥ 2 and ≥ 3 transfers respectively). |
 | `carryPathMean` | Mean path length of the block centre from grasp to release, over transfers. |
@@ -157,10 +160,10 @@ The engine was tested with automated unit tests (Node.js, `node --test`):
 - a block held below the partition top cannot pass through it, even when the cursor jumps across it in one frame;
 - a block released on the partition top slides off to the side of its centre;
 - a returned block lowers the score;
-- tracking loss holds the block for 250 ms and then force-releases it;
+- tracking loss holds the block for 500 ms and then force-releases it;
 - depth-simulation accounting never exceeds 150 blocks and correctly scores all 150 transfers;
 - 3D view: all 150 blocks are present at the start with an identical pile for every participant; grasping takes the top block, front-most on a tie; blocks spread over all 9 depth rows without towers; all 150 can be transferred; no tunnelling through the partition; returns lower the score;
-- the hand-tracking maths (pinch ratio, hysteresis, calibration thresholds, hand selection, mirroring) and the One Euro filter behave as specified.
+- the hand-tracking maths (pinch ratio, hysteresis, release delay, calibration thresholds, hand selection and continuity, mirroring) and the One Euro filter behave as specified.
 
 An automated browser test (Playwright, Chromium) runs complete practice and test trials in mouse-simulation mode, in both the 3D and 2D views. It also checks that the webcam pipeline loads the bundled model and makes no external network requests.
 

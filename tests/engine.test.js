@@ -168,19 +168,19 @@ test('releasing on the source side is a failed release; empty pinch is a missed 
   assert.equal(s.score, 0);
 });
 
-test('tracking loss: holds for 250 ms, then force-releases and logs it', () => {
+test('tracking loss: holds for 500 ms, then force-releases and logs it', () => {
   const sim = makeSim();
   const b = topBlock(sim.e, 'right');
   sim.go(b.x + S / 2, b.y + S / 2, false, 5);
   sim.go(b.x + S / 2, b.y + S / 2, true, 2);
   sim.go(b.x + S / 2, 25, true, 10);
 
-  sim.wait(9, false);            // 150 ms lost: still held
+  sim.wait(27, false);           // 450 ms lost: still held
   assert.equal(sim.e.held?.id, b.id);
   sim.wait(3);                   // tracking restored
   assert.equal(sim.e.held?.id, b.id);
 
-  sim.wait(18, false);           // 300 ms lost: force release at ~250 ms
+  sim.wait(36, false);           // 600 ms lost: force release at ~500 ms
   assert.equal(sim.e.held, null);
   const forced = sim.e.events.find((ev) => ev.type === 'forced_release');
   assert.ok(forced, 'forced release logged');
@@ -188,7 +188,7 @@ test('tracking loss: holds for 250 ms, then force-releases and logs it', () => {
   const s = sim.e.summary();
   assert.equal(s.forcedReleases, 1);
   assert.equal(s.trackingLossEpisodes, 2);
-  assert.ok(Math.abs(s.trackingLostTime - 0.45) < 0.03, `lost time ${s.trackingLostTime}`);
+  assert.ok(Math.abs(s.trackingLostTime - 1.05) < 0.03, `lost time ${s.trackingLostTime}`);
   assert.ok(sim.e.events.filter((ev) => ev.type === 'tracking_lost').length === 2);
 });
 

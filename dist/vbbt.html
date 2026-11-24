@@ -289,7 +289,7 @@ const BOX = Object.freeze({
 const DEFAULTS = Object.freeze({
   duration: 60,             // seconds
   grabRadius: 3.0,          // cm, cursor-to-block-centre distance allowed for a grasp
-  lossGraceMs: 250,         // keep holding a block this long after tracking is lost
+  lossGraceMs: 500,         // keep holding a block this long after tracking is lost
   gravity: 981,             // cm/s^2
   slideSpeed: 40,           // cm/s, speed at which a block slides off the partition top
   ceiling: 34,              // cm, highest point a held block can be lifted to
@@ -1359,39 +1359,60 @@ function palmSize(image, aspect = 4 / 3) {
 }
 
 /** Default thresholds used before a participant is calibrated. */
-const DEFAULT_PINCH = { close: 0.30, open: 0.45 };
+const DEFAULT_PINCH = { close: 0.35, open: 0.50 };
+
+/** Release only after the hand has been clearly open for this many camera frames in a row. */
+const RELEASE_FRAMES = 3;
 
 /**
  * Pinch thresholds from a per-participant calibration and the 1–10 sensitivity slider.
  *   calib = { open: median ratio with an open hand, pinch: median ratio while pinching }
- * Close threshold at 35 % and open threshold at 55 % of the way from pinch to open
- * (the gap between them is the hysteresis). Sensitivity 5 = neutral; each step
- * scales both thresholds by 8 % (higher = a pinch is detected more easily).
+ * Close threshold at 50 % and open threshold at 70 % of the way from pinch to open
+ * (the gap between them is the hysteresis). A pinch is therefore recognised
+ * before the fingertips fully touch, and the hand must open clearly to let go.
+ * Sensitivity 5 = neutral; each step scales both thresholds by 12 %
+ * (higher = a pinch is detected more easily and held more firmly).
  */
 function pinchThresholds(calib, sensitivity = 5) {
   let close; let open;
   if (calib && calib.open > calib.pinch) {
     const r = calib.open - calib.pinch;
-    close = calib.pinch + 0.35 * r;
-    open = calib.pinch + 0.55 * r;
+    close = calib.pinch + 0.50 * r;
+    open = calib.pinch + 0.70 * r;
   } else {
     ({ close, open } = DEFAULT_PINCH);
   }
-  const k = 1 + (Math.max(1, Math.min(10, sensitivity)) - 5) * 0.08;
+  const k = 1 + (Math.max(1, Math.min(10, sensitivity)) - 5) * 0.12;
   return { close: close * k, open: open * k };
 }
 
-/** Pinch state with hysteresis: closes below `close`, opens above `open`. */
+/**
+ * Pinch state with hysteresis and a release delay.
+ *  - Closing: as soon as the ratio falls below `close` (fast grasp).
+ *  - Opening: only when the smoothed ratio stays above `open` for RELEASE_FRAMES
+ *    consecutive frames, so a one- or two-frame tracking flicker during a fast
+ *    carry does not drop the block. The pinch must really be broken.
+ * The ratio is smoothed with an exponential moving average (weight 0.6 on the
+ * newest frame) to reduce landmark jitter.
+ */
 class PinchDetector {
-  constructor(th = DEFAULT_PINCH) { this.th = th; this.state = false; }
+  constructor(th = DEFAULT_PINCH, releaseFrames = RELEASE_FRAMES) {
+    this.th = th; this.releaseFrames = releaseFrames; this.reset();
+  }
   setThresholds(th) { this.th = th; }
   update(ratio) {
     if (ratio == null || Number.isNaN(ratio)) return this.state;
-    if (!this.state && ratio < this.th.close) this.state = true;
-    else if (this.state && ratio > this.th.open) this.state = false;
+    this.value = this.value == null ? ratio : this.value + 0.6 * (ratio - this.value);
+    if (!this.state) {
+      if (Math.min(ratio, this.value) < this.th.close) { this.state = true; this.openCount = 0; }
+    } else if (this.value > this.th.open) {
+      if (++this.openCount >= this.releaseFrames) { this.state = false; this.openCount = 0; }
+    } else {
+      this.openCount = 0;
+    }
     return this.state;
   }
-  reset() { this.state = false; }
+  reset() { this.state = false; this.value = null; this.openCount = 0; }
 }
 
 /**
@@ -1416,6 +1437,19 @@ function selectHand(result, testedHand, invert = false, allowSingle = false) {
   return { hand: match, all: hands };
 }
 
+/**
+ * Hand continuity: the visible hand whose wrist is nearest to the tested hand's
+ * last known wrist position (mirrored image coordinates), if within maxDist.
+ */
+function nearestHand(all, lastWrist, maxDist = 0.12) {
+  let best = null; let bestD = maxDist;
+  for (const h of all) {
+    const d = Math.hypot((1 - h.image[0].x) - lastWrist.u, h.image[0].y - lastWrist.v);
+    if (d < bestD) { best = h; bestD = d; }
+  }
+  return best;
+}
+
 /** Median of an array of numbers. */
 function median(a) {
   if (!a.length) return null;
@@ -1432,7 +1466,7 @@ function percentile(a, p) {
   return s[lo] + (s[hi] - s[lo]) * (i - lo);
 }
 
-return { LM, pinchRatio, cursorFromLandmarks, palmSize, DEFAULT_PINCH, pinchThresholds, PinchDetector, selectHand, median, percentile };
+return { LM, pinchRatio, cursorFromLandmarks, palmSize, DEFAULT_PINCH, RELEASE_FRAMES, pinchThresholds, PinchDetector, selectHand, nearestHand, median, percentile };
 })();
 
 // ===== config.js =====
@@ -1441,7 +1475,7 @@ const __m8 = (() => {
  * config.js — settings the researcher may edit without touching the rest of the code.
  */
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 /** Trial durations in seconds. */
 const TEST_DURATION = 60;
@@ -1495,7 +1529,7 @@ const __m6 = (() => {
  * using the reach area. Extra fields (ratio, palm, label, ...) are used by the
  * setup check and for logging.
  */
-const { cursorFromLandmarks, pinchRatio, palmSize, PinchDetector, selectHand, DEFAULT_PINCH } = __m7;
+const { cursorFromLandmarks, pinchRatio, palmSize, PinchDetector, selectHand, nearestHand, DEFAULT_PINCH } = __m7;
 const { MEDIAPIPE_LOCAL, MEDIAPIPE_CDN, MEDIAPIPE_MODEL_CDN, HANDEDNESS_INVERTED } = __m8;
 
 // Bones of the hand skeleton for the preview overlay (MediaPipe landmark pairs).
@@ -1585,6 +1619,9 @@ class CameraInput {
     this.info = {};
     this.invert = HANDEDNESS_INVERTED;  // set by the camera check (see setup.js)
     this.allowSingle = true;            // until the camera check has confirmed the labels
+    this.continuity = true;             // keep following the same hand if its label flickers
+    this.lastWrist = null;              // {u, v, t} of the tested hand in the previous frames
+    this.trackedIndex = -1;
   }
 
   setTestedHand(h) { this.testedHand = h; this.pinch.reset(); }
@@ -1663,9 +1700,18 @@ class CameraInput {
     this.fpsTimes.push(now);
     while (this.fpsTimes.length && now - this.fpsTimes[0] > 2000) this.fpsTimes.shift();
     const aspect = (this.video.videoWidth || 4) / (this.video.videoHeight || 3);
-    const { hand, all } = selectHand(res, this.testedHand, this.invert, this.allowSingle);
+    let { hand, all } = selectHand(res, this.testedHand, this.invert, this.allowSingle);
+    // Hand continuity: MediaPipe sometimes flips the left/right label for a frame or
+    // two during fast movement. If no hand has the tested label but a hand is close
+    // to where the tested hand was a moment ago (< 0.5 s), keep following it.
+    if (!hand && this.continuity && this.lastWrist && now - this.lastWrist.t < 500) {
+      const best = nearestHand(all, this.lastWrist);
+      if (best) hand = { ...best, continued: true };
+    }
     this.seq++;
     this.lastLandmarks = hand ? hand.image : null;
+    this.trackedIndex = hand ? hand.index : -1;
+    if (hand) this.lastWrist = { u: 1 - hand.image[0].x, v: hand.image[0].y, t: now };
     if (!hand) {
       this.latest = { present: false, u: this.latest.u, v: this.latest.v, pinch: this.latest.pinch, t: now, others: all.map((h) => h.label) };
       return;
@@ -1680,6 +1726,7 @@ class CameraInput {
       wrist: { u: 1 - hand.image[0].x, v: hand.image[0].y },
       others: all.map((h) => h.label),
       assumed: !!hand.assumed,
+      continued: !!hand.continued,
     };
   }
 
@@ -1711,9 +1758,8 @@ class CameraInput {
     ctx.save();
     ctx.translate(w, 0); ctx.scale(-1, 1);          // mirror, like looking in a mirror
     ctx.drawImage(this.video, 0, 0, w, h);
-    const { hand } = selectHand(res, this.testedHand, this.invert, this.allowSingle);
     (res.landmarks || []).forEach((pts, i) => {
-      const tested = hand && hand.index === i;
+      const tested = this.trackedIndex === i;
       ctx.strokeStyle = tested ? '#00e676' : '#ff9100';
       ctx.lineWidth = 3;
       for (const [a, b] of BONES) {
@@ -1723,6 +1769,31 @@ class CameraInput {
       for (const k of [4, 8]) { ctx.beginPath(); ctx.arc(pts[k].x * w, pts[k].y * h, 5, 0, Math.PI * 2); ctx.fill(); }
     });
     ctx.restore();
+    this._drawPinchMeter(ctx, w, h);
+  }
+
+  /**
+   * Live pinch meter on the preview: a bar showing the current pinch ratio
+   * (fingers apart = long bar), with the "close" (green) and "open" (red)
+   * thresholds, and a label saying whether a pinch is detected.
+   */
+  _drawPinchMeter(ctx, w, h) {
+    const l = this.latest;
+    const th = this.pinch.th;
+    const max = Math.max(1.2, th.open * 1.6);
+    const x0 = 8; const y0 = h - 30; const bw = w - 16; const bh = 14;
+    const X = (r) => x0 + Math.min(1, r / max) * bw;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, y0 - 24, w, 54);
+    ctx.fillStyle = '#455a64'; ctx.fillRect(x0, y0, bw, bh);
+    if (l.present && this.pinch.value != null) {
+      ctx.fillStyle = l.pinch ? '#ffea00' : '#90caf9';
+      ctx.fillRect(x0, y0, X(this.pinch.value) - x0, bh);
+    }
+    ctx.fillStyle = '#00e676'; ctx.fillRect(X(th.close) - 1.5, y0 - 4, 3, bh + 8);
+    ctx.fillStyle = '#ff5252'; ctx.fillRect(X(th.open) - 1.5, y0 - 4, 3, bh + 8);
+    ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+    ctx.fillStyle = l.present ? (l.pinch ? '#ffea00' : '#ffffff') : '#ff8a80';
+    ctx.fillText(!l.present ? 'Hand not seen' : l.pinch ? 'PINCH - holding' : 'Open', x0, y0 - 7);
   }
 
   /** Latest hand sample. Stale results (> 300 ms old) count as "hand not present". */
@@ -1864,6 +1935,7 @@ async function runSetupCheck({ cam, canvas, overlay, testedHand, signal }) {
   // shows only the tested hand, so if the single visible hand keeps getting the
   // opposite label for ~1 s, the labels are swapped (mirrored camera image).
   cam.allowSingle = false;
+  cam.continuity = false;   // label check needs the raw labels
   let mismatch = 0; let swapped = false;
   let openRatios = []; let palms = []; let wrists = []; let stableSince = null;
   await step((el, now) => {
@@ -1897,6 +1969,7 @@ async function runSetupCheck({ cam, canvas, overlay, testedHand, signal }) {
     return prog >= 1 ? true : null;
   });
   result.handednessInverted = cam.invert;
+  cam.continuity = true;
   result.openRatio = median(openRatios);
   result.palmSize = Math.round(median(palms) * 1000) / 1000;
   result.distanceHint = distanceHint(result.palmSize);
@@ -1907,7 +1980,7 @@ async function runSetupCheck({ cam, canvas, overlay, testedHand, signal }) {
     drawCamera();
     const l = cam.read(now);
     const lines = ['Now touch your THUMB and INDEX finger tips together, like picking up a small block.', 'Hold the pinch.'];
-    const pinched = l.present && l.ratio < result.openRatio * 0.45;
+    const pinched = l.present && l.ratio < result.openRatio * 0.6;
     if (!l.present) lines.push({ text: 'Hand not seen — keep it in view.', cls: 'warn' });
     if (pinched) { if (pinchSince == null) pinchSince = now; pinchRatios.push(l.ratio); } else { pinchSince = null; pinchRatios = []; }
     const prog = pinchSince == null ? 0 : Math.min(1, (now - pinchSince) / 2000);
@@ -2268,7 +2341,10 @@ async function startTrial() {
 
   if (!state.input || state.input.kind !== ui.device.value) await connect();
   if (!state.input) { setMsg('Please connect the hand-tracking input first.', 'warn'); return; }
-  if (state.input.kind === 'camera') state.input.setTestedHand(testedHand());
+  if (state.input.kind === 'camera') {
+    state.input.setTestedHand(testedHand());
+    if (!state.calib) setMsg('Tip: run "Camera check & calibration" first for the most reliable pinch.', 'warn');
+  }
 
   const practice = ui.practice.checked;
   const hand = testedHand();
@@ -2461,7 +2537,7 @@ async function runSetup() {
       `${res.fps} fps, lighting ${res.brightnessHint}, distance ${res.distanceHint}.` + (warn ? ' See warnings.' : ''), warn ? 'warn' : 'ok');
     await new Promise((r) => setTimeout(r, 3500));
   } catch (e) {
-    if (state.input?.kind === 'camera') state.input.allowSingle = true;   // labels not confirmed
+    if (state.input?.kind === 'camera') { state.input.allowSingle = true; state.input.continuity = true; }
     const msg = e.message === 'cancelled' ? 'Camera check cancelled.' : e.message === 'timeout'
       ? 'Camera check timed out — the hand was not seen clearly. Check lighting and distance, then try again.' : friendlyError(e);
     setStatus(ui.calibStatus, msg, 'warn');

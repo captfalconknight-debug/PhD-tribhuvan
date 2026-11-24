@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pinchRatio, cursorFromLandmarks, PinchDetector, pinchThresholds, selectHand, DEFAULT_PINCH, median, percentile,
+  pinchRatio, cursorFromLandmarks, PinchDetector, pinchThresholds, selectHand, nearestHand, DEFAULT_PINCH, median, percentile,
 } from '../inputs/handmath.js';
 import { OneEuroFilter } from '../filters.js';
 
@@ -24,19 +24,24 @@ test('pinch ratio is independent of hand size / distance', () => {
   assert.ok(Math.abs(pinchRatio(hand(0.9), hand(0.045)) - 10) < 1e-9);
 });
 
-test('pinch detector uses hysteresis', () => {
+test('pinch detector: fast close, hysteresis, release only after 3 clearly-open frames', () => {
   const d = new PinchDetector({ close: 0.3, open: 0.45 });
   assert.equal(d.update(0.8), false);
   assert.equal(d.update(0.35), false);  // between thresholds, stays open
-  assert.equal(d.update(0.25), true);   // closes
+  d.reset();
+  assert.equal(d.update(0.25), true);   // closes on the first frame below "close"
   assert.equal(d.update(0.40), true);   // between thresholds, stays closed
-  assert.equal(d.update(0.50), false);  // opens
+  assert.equal(d.update(0.9), true);    // a single open-looking frame (flicker) does not release
+  assert.equal(d.update(0.2), true);
+  assert.equal(d.update(0.9), true);    // open frame 1
+  assert.equal(d.update(0.9), true);    // open frame 2
+  assert.equal(d.update(0.9), false);   // open frame 3 -> released
   assert.equal(d.update(null), false);  // missing value keeps state
 });
 
 test('calibrated thresholds sit between pinch and open; sensitivity scales them', () => {
   const t = pinchThresholds({ open: 1.0, pinch: 0.1 }, 5);
-  assert.ok(Math.abs(t.close - 0.415) < 1e-9 && Math.abs(t.open - 0.595) < 1e-9);
+  assert.ok(Math.abs(t.close - 0.55) < 1e-9 && Math.abs(t.open - 0.73) < 1e-9);
   const hi = pinchThresholds({ open: 1.0, pinch: 0.1 }, 10);
   const lo = pinchThresholds({ open: 1.0, pinch: 0.1 }, 1);
   assert.ok(hi.close > t.close && lo.close < t.close);
@@ -63,6 +68,13 @@ test('selectHand picks the tested hand and can invert labels', () => {
   const one = { landmarks: [hand(0.1)], handedness: [[{ categoryName: 'Left', score: 0.9 }]] };
   assert.equal(selectHand(one, 'right').hand, null);
   assert.equal(selectHand(one, 'right', false, true).hand.assumed, true);
+});
+
+test('hand continuity follows the hand near the last wrist position', () => {
+  const near = { image: hand(0.1, { ox: 0.30, oy: 0.5 }) };   // mirrored wrist u = 0.70
+  const far = { image: hand(0.1, { ox: 0.80, oy: 0.5 }) };    // mirrored wrist u = 0.20
+  assert.equal(nearestHand([far, near], { u: 0.68, v: 0.52 }), near);
+  assert.equal(nearestHand([far], { u: 0.68, v: 0.52 }), null, 'too far away: not the same hand');
 });
 
 test('median and percentile', () => {

@@ -40,39 +40,60 @@ export function palmSize(image, aspect = 4 / 3) {
 }
 
 /** Default thresholds used before a participant is calibrated. */
-export const DEFAULT_PINCH = { close: 0.30, open: 0.45 };
+export const DEFAULT_PINCH = { close: 0.35, open: 0.50 };
+
+/** Release only after the hand has been clearly open for this many camera frames in a row. */
+export const RELEASE_FRAMES = 3;
 
 /**
  * Pinch thresholds from a per-participant calibration and the 1–10 sensitivity slider.
  *   calib = { open: median ratio with an open hand, pinch: median ratio while pinching }
- * Close threshold at 35 % and open threshold at 55 % of the way from pinch to open
- * (the gap between them is the hysteresis). Sensitivity 5 = neutral; each step
- * scales both thresholds by 8 % (higher = a pinch is detected more easily).
+ * Close threshold at 50 % and open threshold at 70 % of the way from pinch to open
+ * (the gap between them is the hysteresis). A pinch is therefore recognised
+ * before the fingertips fully touch, and the hand must open clearly to let go.
+ * Sensitivity 5 = neutral; each step scales both thresholds by 12 %
+ * (higher = a pinch is detected more easily and held more firmly).
  */
 export function pinchThresholds(calib, sensitivity = 5) {
   let close; let open;
   if (calib && calib.open > calib.pinch) {
     const r = calib.open - calib.pinch;
-    close = calib.pinch + 0.35 * r;
-    open = calib.pinch + 0.55 * r;
+    close = calib.pinch + 0.50 * r;
+    open = calib.pinch + 0.70 * r;
   } else {
     ({ close, open } = DEFAULT_PINCH);
   }
-  const k = 1 + (Math.max(1, Math.min(10, sensitivity)) - 5) * 0.08;
+  const k = 1 + (Math.max(1, Math.min(10, sensitivity)) - 5) * 0.12;
   return { close: close * k, open: open * k };
 }
 
-/** Pinch state with hysteresis: closes below `close`, opens above `open`. */
+/**
+ * Pinch state with hysteresis and a release delay.
+ *  - Closing: as soon as the ratio falls below `close` (fast grasp).
+ *  - Opening: only when the smoothed ratio stays above `open` for RELEASE_FRAMES
+ *    consecutive frames, so a one- or two-frame tracking flicker during a fast
+ *    carry does not drop the block. The pinch must really be broken.
+ * The ratio is smoothed with an exponential moving average (weight 0.6 on the
+ * newest frame) to reduce landmark jitter.
+ */
 export class PinchDetector {
-  constructor(th = DEFAULT_PINCH) { this.th = th; this.state = false; }
+  constructor(th = DEFAULT_PINCH, releaseFrames = RELEASE_FRAMES) {
+    this.th = th; this.releaseFrames = releaseFrames; this.reset();
+  }
   setThresholds(th) { this.th = th; }
   update(ratio) {
     if (ratio == null || Number.isNaN(ratio)) return this.state;
-    if (!this.state && ratio < this.th.close) this.state = true;
-    else if (this.state && ratio > this.th.open) this.state = false;
+    this.value = this.value == null ? ratio : this.value + 0.6 * (ratio - this.value);
+    if (!this.state) {
+      if (Math.min(ratio, this.value) < this.th.close) { this.state = true; this.openCount = 0; }
+    } else if (this.value > this.th.open) {
+      if (++this.openCount >= this.releaseFrames) { this.state = false; this.openCount = 0; }
+    } else {
+      this.openCount = 0;
+    }
     return this.state;
   }
-  reset() { this.state = false; }
+  reset() { this.state = false; this.value = null; this.openCount = 0; }
 }
 
 /**
@@ -95,6 +116,19 @@ export function selectHand(result, testedHand, invert = false, allowSingle = fal
   let match = hands.filter((h) => h.label === testedHand).sort((a, b) => b.score - a.score)[0] || null;
   if (!match && allowSingle && hands.length === 1) match = { ...hands[0], assumed: true };
   return { hand: match, all: hands };
+}
+
+/**
+ * Hand continuity: the visible hand whose wrist is nearest to the tested hand's
+ * last known wrist position (mirrored image coordinates), if within maxDist.
+ */
+export function nearestHand(all, lastWrist, maxDist = 0.12) {
+  let best = null; let bestD = maxDist;
+  for (const h of all) {
+    const d = Math.hypot((1 - h.image[0].x) - lastWrist.u, h.image[0].y - lastWrist.v);
+    if (d < bestD) { best = h; bestD = d; }
+  }
+  return best;
 }
 
 /** Median of an array of numbers. */

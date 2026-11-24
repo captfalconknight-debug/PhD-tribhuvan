@@ -65,7 +65,7 @@ Edit `CONSENT_TEXT` in `config.js` with your ethics-approved wording, then updat
 
 **Automated tests (all passing):**
 ```bash
-npm test         # 24 unit tests: game engine, pinch/hand maths, smoothing filter
+npm test         # 25 unit tests: game engine, pinch/hand maths, smoothing filter
 npm run smoke    # browser test (3D view; VBBT_VIEW=2d for 2D): full practice + 60 s trial in mouse mode, saving, CSV/JSON export,
                  # webcam pipeline loads the bundled model, camera check starts/cancels, no external requests
 node tests/smoke.mjs dist/vbbt.html   # same test on the single-file build
@@ -80,11 +80,12 @@ The smoke test needs Playwright (`npm i -D playwright && npx playwright install 
 - [ ] The camera check completes all 4 steps for the right hand **and** for the left hand.
 - [ ] If the camera check says "left/right labels are swapped … corrected", the trial still follows the correct hand.
 - [ ] Frame rate in the camera check is ≥ 25 fps (charger plugged in).
-- [ ] Pinch closes reliably when thumb and index touch, and does not close with the hand relaxed and open. Adjust sensitivity if needed and **keep the setting constant** within the study.
+- [ ] Pinch closes reliably when thumb and index touch, and does not close with the hand relaxed and open. Watch the **pinch meter** under the camera preview: the bar shows the gap between thumb and index. When it shrinks past the **green** line it turns yellow ("PINCH - holding"); the block is let go only after it grows past the **red** line. If pinching is hard, raise the sensitivity; if the block is hard to let go, lower it. **Keep the setting constant** within the study.
 - [ ] A block can be picked up from every column, including the far edge and the bottom layer.
 - [ ] A block can be lifted over the partition without strain at the chosen reach area.
 - [ ] The hand never drops out at the edges of the reach area.
-- [ ] Hiding the hand briefly while carrying (< ¼ s) keeps the block; longer drops it.
+- [ ] Hiding the hand briefly while carrying (< ½ s) keeps the block; longer drops it.
+- [ ] While carrying a block with a steady pinch, moving fast does not drop it (watch the pinch meter stay yellow).
 - [ ] Practice and test trials run, the result appears, and CSV and JSON download and open in Excel/SPSS/R.
 - [ ] Results are similar for the same person on two runs (quick test–retest check).
 - [ ] Repeat in the actual testing room with its real lighting.

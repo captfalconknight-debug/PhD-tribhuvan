@@ -34,7 +34,7 @@ export const BOX = Object.freeze({
 export const DEFAULTS = Object.freeze({
   duration: 60,             // seconds
   grabRadius: 3.0,          // cm, cursor-to-block-centre distance allowed for a grasp
-  lossGraceMs: 250,         // keep holding a block this long after tracking is lost
+  lossGraceMs: 500,         // keep holding a block this long after tracking is lost
   gravity: 981,             // cm/s^2
   slideSpeed: 40,           // cm/s, speed at which a block slides off the partition top
   ceiling: 34,              // cm, highest point a held block can be lifted to

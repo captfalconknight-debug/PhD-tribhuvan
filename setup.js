@@ -124,6 +124,7 @@ export async function runSetupCheck({ cam, canvas, overlay, testedHand, signal }
   // shows only the tested hand, so if the single visible hand keeps getting the
   // opposite label for ~1 s, the labels are swapped (mirrored camera image).
   cam.allowSingle = false;
+  cam.continuity = false;   // label check needs the raw labels
   let mismatch = 0; let swapped = false;
   let openRatios = []; let palms = []; let wrists = []; let stableSince = null;
   await step((el, now) => {
@@ -157,6 +158,7 @@ export async function runSetupCheck({ cam, canvas, overlay, testedHand, signal }
     return prog >= 1 ? true : null;
   });
   result.handednessInverted = cam.invert;
+  cam.continuity = true;
   result.openRatio = median(openRatios);
   result.palmSize = Math.round(median(palms) * 1000) / 1000;
   result.distanceHint = distanceHint(result.palmSize);
@@ -167,7 +169,7 @@ export async function runSetupCheck({ cam, canvas, overlay, testedHand, signal }
     drawCamera();
     const l = cam.read(now);
     const lines = ['Now touch your THUMB and INDEX finger tips together, like picking up a small block.', 'Hold the pinch.'];
-    const pinched = l.present && l.ratio < result.openRatio * 0.45;
+    const pinched = l.present && l.ratio < result.openRatio * 0.6;
     if (!l.present) lines.push({ text: 'Hand not seen — keep it in view.', cls: 'warn' });
     if (pinched) { if (pinchSince == null) pinchSince = now; pinchRatios.push(l.ratio); } else { pinchSince = null; pinchRatios = []; }
     const prog = pinchSince == null ? 0 : Math.min(1, (now - pinchSince) / 2000);

@@ -10,7 +10,7 @@
  * setup check and for logging.
  */
 import {
-  cursorFromLandmarks, pinchRatio, palmSize, PinchDetector, selectHand, DEFAULT_PINCH,
+  cursorFromLandmarks, pinchRatio, palmSize, PinchDetector, selectHand, nearestHand, DEFAULT_PINCH,
 } from './handmath.js';
 import { MEDIAPIPE_LOCAL, MEDIAPIPE_CDN, MEDIAPIPE_MODEL_CDN, HANDEDNESS_INVERTED } from '../config.js';
 
@@ -101,6 +101,9 @@ export class CameraInput {
     this.info = {};
     this.invert = HANDEDNESS_INVERTED;  // set by the camera check (see setup.js)
     this.allowSingle = true;            // until the camera check has confirmed the labels
+    this.continuity = true;             // keep following the same hand if its label flickers
+    this.lastWrist = null;              // {u, v, t} of the tested hand in the previous frames
+    this.trackedIndex = -1;
   }
 
   setTestedHand(h) { this.testedHand = h; this.pinch.reset(); }
@@ -179,9 +182,18 @@ export class CameraInput {
     this.fpsTimes.push(now);
     while (this.fpsTimes.length && now - this.fpsTimes[0] > 2000) this.fpsTimes.shift();
     const aspect = (this.video.videoWidth || 4) / (this.video.videoHeight || 3);
-    const { hand, all } = selectHand(res, this.testedHand, this.invert, this.allowSingle);
+    let { hand, all } = selectHand(res, this.testedHand, this.invert, this.allowSingle);
+    // Hand continuity: MediaPipe sometimes flips the left/right label for a frame or
+    // two during fast movement. If no hand has the tested label but a hand is close
+    // to where the tested hand was a moment ago (< 0.5 s), keep following it.
+    if (!hand && this.continuity && this.lastWrist && now - this.lastWrist.t < 500) {
+      const best = nearestHand(all, this.lastWrist);
+      if (best) hand = { ...best, continued: true };
+    }
     this.seq++;
     this.lastLandmarks = hand ? hand.image : null;
+    this.trackedIndex = hand ? hand.index : -1;
+    if (hand) this.lastWrist = { u: 1 - hand.image[0].x, v: hand.image[0].y, t: now };
     if (!hand) {
       this.latest = { present: false, u: this.latest.u, v: this.latest.v, pinch: this.latest.pinch, t: now, others: all.map((h) => h.label) };
       return;
@@ -196,6 +208,7 @@ export class CameraInput {
       wrist: { u: 1 - hand.image[0].x, v: hand.image[0].y },
       others: all.map((h) => h.label),
       assumed: !!hand.assumed,
+      continued: !!hand.continued,
     };
   }
 
@@ -227,9 +240,8 @@ export class CameraInput {
     ctx.save();
     ctx.translate(w, 0); ctx.scale(-1, 1);          // mirror, like looking in a mirror
     ctx.drawImage(this.video, 0, 0, w, h);
-    const { hand } = selectHand(res, this.testedHand, this.invert, this.allowSingle);
     (res.landmarks || []).forEach((pts, i) => {
-      const tested = hand && hand.index === i;
+      const tested = this.trackedIndex === i;
       ctx.strokeStyle = tested ? '#00e676' : '#ff9100';
       ctx.lineWidth = 3;
       for (const [a, b] of BONES) {
@@ -239,6 +251,31 @@ export class CameraInput {
       for (const k of [4, 8]) { ctx.beginPath(); ctx.arc(pts[k].x * w, pts[k].y * h, 5, 0, Math.PI * 2); ctx.fill(); }
     });
     ctx.restore();
+    this._drawPinchMeter(ctx, w, h);
+  }
+
+  /**
+   * Live pinch meter on the preview: a bar showing the current pinch ratio
+   * (fingers apart = long bar), with the "close" (green) and "open" (red)
+   * thresholds, and a label saying whether a pinch is detected.
+   */
+  _drawPinchMeter(ctx, w, h) {
+    const l = this.latest;
+    const th = this.pinch.th;
+    const max = Math.max(1.2, th.open * 1.6);
+    const x0 = 8; const y0 = h - 30; const bw = w - 16; const bh = 14;
+    const X = (r) => x0 + Math.min(1, r / max) * bw;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, y0 - 24, w, 54);
+    ctx.fillStyle = '#455a64'; ctx.fillRect(x0, y0, bw, bh);
+    if (l.present && this.pinch.value != null) {
+      ctx.fillStyle = l.pinch ? '#ffea00' : '#90caf9';
+      ctx.fillRect(x0, y0, X(this.pinch.value) - x0, bh);
+    }
+    ctx.fillStyle = '#00e676'; ctx.fillRect(X(th.close) - 1.5, y0 - 4, 3, bh + 8);
+    ctx.fillStyle = '#ff5252'; ctx.fillRect(X(th.open) - 1.5, y0 - 4, 3, bh + 8);
+    ctx.font = 'bold 15px system-ui, sans-serif'; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+    ctx.fillStyle = l.present ? (l.pinch ? '#ffea00' : '#ffffff') : '#ff8a80';
+    ctx.fillText(!l.present ? 'Hand not seen' : l.pinch ? 'PINCH - holding' : 'Open', x0, y0 - 7);
   }
 
   /** Latest hand sample. Stale results (> 300 ms old) count as "hand not present". */

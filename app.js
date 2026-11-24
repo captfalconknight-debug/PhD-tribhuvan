@@ -211,7 +211,10 @@ async function startTrial() {
 
   if (!state.input || state.input.kind !== ui.device.value) await connect();
   if (!state.input) { setMsg('Please connect the hand-tracking input first.', 'warn'); return; }
-  if (state.input.kind === 'camera') state.input.setTestedHand(testedHand());
+  if (state.input.kind === 'camera') {
+    state.input.setTestedHand(testedHand());
+    if (!state.calib) setMsg('Tip: run "Camera check & calibration" first for the most reliable pinch.', 'warn');
+  }
 
   const practice = ui.practice.checked;
   const hand = testedHand();
@@ -404,7 +407,7 @@ async function runSetup() {
       `${res.fps} fps, lighting ${res.brightnessHint}, distance ${res.distanceHint}.` + (warn ? ' See warnings.' : ''), warn ? 'warn' : 'ok');
     await new Promise((r) => setTimeout(r, 3500));
   } catch (e) {
-    if (state.input?.kind === 'camera') state.input.allowSingle = true;   // labels not confirmed
+    if (state.input?.kind === 'camera') { state.input.allowSingle = true; state.input.continuity = true; }
     const msg = e.message === 'cancelled' ? 'Camera check cancelled.' : e.message === 'timeout'
       ? 'Camera check timed out — the hand was not seen clearly. Check lighting and distance, then try again.' : friendlyError(e);
     setStatus(ui.calibStatus, msg, 'warn');
