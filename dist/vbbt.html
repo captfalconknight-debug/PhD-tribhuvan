@@ -854,8 +854,14 @@ class Renderer {
 
     // Hidden counts (depth simulation)
     const [sx0, sx1] = comp(src);
-    this.text(`More blocks behind: ${e.reserve}`, (sx0 + sx1) / 2, -2.6, 1.5, '#263238', 'center', '600');
-    this.text(`Stacked behind: ${e.targetHidden}`, (tx0 + tx1) / 2, -2.6, 1.5, '#263238', 'center', '600');
+    // Full counts of all 150 blocks. Only 3 layers are drawn; the rest are "behind" (depth simulation).
+    const inSource = e.reserve + e.blocks.filter((b) => b.state !== 'held' && e.sideOf(b) === src).length;
+    const inTarget = e.score();
+    const visS = inSource - e.reserve; const visT = inTarget - e.targetHidden;
+    this.text(`${inSource} of ${BOX.totalBlocks} blocks here`, (sx0 + sx1) / 2, -2.2, 1.5, '#263238', 'center', '700');
+    this.text(`(${visS} shown, ${e.reserve} behind)`, (sx0 + sx1) / 2, -3.8, 1.2, '#455a64', 'center', '600');
+    this.text(`${inTarget} of ${BOX.totalBlocks} blocks here`, (tx0 + tx1) / 2, -2.2, 1.5, '#263238', 'center', '700');
+    this.text(`(${visT} shown, ${e.targetHidden} behind)`, (tx0 + tx1) / 2, -3.8, 1.2, '#455a64', 'center', '600');
 
     // Blocks
     const cand = o.highlight && o.cursor?.present ? e.grabCandidate(o.cursor.x, o.cursor.y) : null;

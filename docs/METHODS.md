@@ -86,7 +86,7 @@ All camera-check results are stored with every trial that follows (columns `setu
 - *Source side:* while the reserve is not empty, whenever fewer than 30 blocks are visible in the source compartment, one block per frame is moved from the reserve into the lowest free, supported grid position. The participant therefore always sees a full pile until the reserve runs out.
 - *Target side:* a block that comes to rest in a fourth layer (bottom ≥ 7.5 cm) is removed from view and added to a hidden counter. It **still counts** in the score.
 - A returned block that comes to rest in a fourth layer on the source side goes back into the reserve.
-- The total number of blocks is always 150 (visible + reserve + hidden). The hidden counts are shown on screen.
+- The total number of blocks is always 150 (visible + reserve + hidden). Under each compartment the screen shows the full count, e.g. "150 of 150 blocks here (30 shown, 120 behind)" at the start of the test.
 
 ## 5. Scoring
 
