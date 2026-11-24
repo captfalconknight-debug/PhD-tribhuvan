@@ -54,6 +54,7 @@ const state = {
   t0: 0, countdownStart: 0, handSince: null,
   trial: null,            // metadata of the running trial
   camSamples: 0,          // new camera frames during the running trial
+  lastDraw: 0,
   setupAbort: null,
 };
 
@@ -282,6 +283,7 @@ function finishTrial() {
       cameraResolution: cam ? `${state.inputInfo.width}x${state.inputInfo.height}` : null,
       processing: cam ? state.inputInfo.delegate : null,
       processingMsPerFrame: cam ? state.inputInfo.timings : null,
+      detectMsMean: cam && state.input.detectCount ? Math.round(state.input.detectSum / state.input.detectCount * 10) / 10 : null,
       calibrated: !!c,
       checkFps: c?.fps ?? null,
       brightness: c?.brightness ?? null,
@@ -343,7 +345,9 @@ function frame(now) {
     } else state.handSince = null;
     showOverlay(state.input?.kind === 'mouse'
       ? '<div class="msg">Move the mouse over the box to begin</div>'
-      : `<div class="msg">Show your ${name} hand to the camera</div>`);
+      : hand?.raw?.others?.length
+        ? `<div class="msg">The camera sees your other hand.<br>Please rest it out of view and show your ${name} hand.</div>`
+        : `<div class="msg">Show your ${name} hand to the camera</div>`);
   } else if (state.phase === 'countdown') {
     const left = 3 - Math.floor((now - state.countdownStart) / 1000);
     if (left <= 0) {
@@ -352,6 +356,7 @@ function frame(now) {
       state.lastSeq = hand ? hand.seq : -1;
       state.lastUpdate = now;
       state.camSamples = 0;
+      if (isCam) { state.input.detectSum = 0; state.input.detectCount = 0; }
       state.trial.meta.timestamp = new Date().toISOString();
       state.engine.log('start', { duration: state.trial.duration });
       showOverlay('');
@@ -379,6 +384,11 @@ function frame(now) {
   if (!state.engine && (state.idleEngine.testedHand !== testedHand() || state.idleEngine.mode !== viewMode())) {
     state.idleEngine = new VBBTEngine({ testedHand: testedHand(), mode: viewMode() });
   }
+  // With the webcam, redraw only when a new camera frame has arrived (or every
+  // 40 ms for falling blocks): drawing at 60 fps would take processor time away
+  // from the hand tracking, which runs on the same thread.
+  if (isCam && !fresh && now - state.lastDraw < 40) return;
+  state.lastDraw = now;
   renderer.draw(eng, {
     cursor: hand && hand.x != null ? { x: hand.x, y: hand.y, pinch: hand.pinch, present: hand.present }
       : (eng.cursor ? { ...eng.cursor, present: false, pinch: false } : null),
@@ -448,7 +458,11 @@ function showResults(row, practice) {
   ui.resultsTitle.textContent = practice ? 'Practice result (not saved)' : `Result — ${row.participantId}, ${row.testedHand} hand, trial ${row.trialNumber}`;
   ui.resScore.textContent = row.score;
   ui.resFlag.hidden = !row.lowFpsFlag;
-  ui.resFlag.textContent = row.lowFpsFlag ? `Low camera frame rate (${row.inputFps} fps < ${FPS_WARNING}). Consider repeating this trial.` : '';
+  ui.resFlag.textContent = row.lowFpsFlag
+    ? `Low camera frame rate (${row.inputFps} fps < ${FPS_WARNING}).` +
+      (row.setup.detectMsMean ? ` Hand tracking took ${row.setup.detectMsMean} ms per frame (${row.setup.processing}).` : '') +
+      ' Plug in the charger, close other programs, then repeat this trial.'
+    : '';
   ui.resTable.innerHTML = '';
   for (const [label, key] of RESULT_ROWS) {
     if (key === 'inputFps' && row.inputFps == null) continue;

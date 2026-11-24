@@ -20,7 +20,7 @@ export class Renderer {
   /** Match the canvas resolution to its on-screen size (sharp on high-DPI screens). */
   resize() {
     const r = this.canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(1.25, window.devicePixelRatio || 1);   // capped: drawing cost competes with hand tracking
     this.canvas.width = Math.max(1, Math.round(r.width * dpr));
     this.canvas.height = Math.max(1, Math.round(r.height * dpr));
     const W = this.canvas.width; const H = this.canvas.height;
@@ -119,7 +119,6 @@ export class Renderer {
     }
     if (cand) {
       c.save();
-      c.shadowColor = '#ffab00'; c.shadowBlur = 12 * this.dpr;
       this.rect(cand.x - 0.15, cand.y - 0.15, S + 0.3, S + 0.3, 'rgba(0,0,0,0)', '#ff6d00', 4);
       c.restore();
     }

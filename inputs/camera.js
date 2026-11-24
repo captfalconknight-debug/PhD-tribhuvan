@@ -45,7 +45,10 @@ async function loadLandmarker(video) {
           const lm = await vision.HandLandmarker.createFromOptions(fileset, {
             baseOptions: { modelAssetPath: a.model, delegate },
             runningMode: 'VIDEO',
-            numHands: 2,
+            // One hand only: with numHands = 2, MediaPipe keeps running its slow palm
+            // detector on every frame to look for a second hand. With 1, once the
+            // hand is found only the faster landmark model runs (much higher fps).
+            numHands: 1,
             minHandDetectionConfidence: 0.5,
             minHandPresenceConfidence: 0.5,
             minTrackingConfidence: 0.5,
@@ -168,7 +171,11 @@ export class CameraInput {
         // MediaPipe requires strictly increasing timestamps.
         const now = Math.max(performance.now(), (this.landmarker._vbbtLastTs || 0) + 1);
         this.landmarker._vbbtLastTs = now;
+        const t0 = performance.now();
         const res = this.landmarker.detectForVideo(v, now);
+        const ms = performance.now() - t0;
+        this.detectMs = this.detectMs == null ? ms : this.detectMs + 0.1 * (ms - this.detectMs);  // running mean
+        this.detectSum = (this.detectSum || 0) + ms; this.detectCount = (this.detectCount || 0) + 1;
         this._process(res, now);
         this._drawPreview(res);
       }

@@ -51,6 +51,14 @@ node scripts/build-single.js
 - **Laptop:** plugged into the charger (battery saving lowers the frame rate). Close Zoom/Teams and other camera apps.
 - Trials with a camera frame rate below 25 fps are flagged in the results and the CSV.
 
+### If the frame rate is low (below 25 fps)
+1. **Plug in the charger** and set Windows to **Best performance** (Settings → System → Power → Power mode). On battery, laptops slow the processor down.
+2. **Close other programs and browser tabs**, especially Zoom/Teams, video and other camera apps.
+3. **Turn on graphics acceleration in Chrome/Edge:** Settings → System → *Use graphics acceleration when available* → on, then restart the browser. After Connect, the status line says *GPU processing* or *CPU processing*; the app picks whichever is faster on that laptop.
+4. **Show only the tested hand.** The app tracks one hand; if the other hand is in view, tracking is slower and can lock onto the wrong hand.
+5. Good **lighting** also helps: tracking recovers faster when the hand is clearly visible.
+6. Check the result: the low-FPS message shows the hand-tracking time per frame. Above about 40 ms means the laptop itself is too slow for 25 fps. Use a faster laptop for data collection, and record the device (it is saved with each trial).
+
 ### Changing the consent text
 Edit `CONSENT_TEXT` in `config.js` with your ethics-approved wording, then update the hosted site (see `docs/HOSTING.md`).
 

@@ -2,7 +2,7 @@
  * config.js — settings the researcher may edit without touching the rest of the code.
  */
 
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 
 /** Trial durations in seconds. */
 export const TEST_DURATION = 60;

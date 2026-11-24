@@ -56,7 +56,7 @@ export class Renderer3D {
   /** Fit the scene into the canvas. */
   resize() {
     const r = this.canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(1.25, window.devicePixelRatio || 1);   // capped: drawing cost competes with hand tracking
     this.canvas.width = Math.max(1, Math.round(r.width * dpr));
     this.canvas.height = Math.max(1, Math.round(r.height * dpr));
     this.dpr = dpr;
@@ -170,7 +170,7 @@ export class Renderer3D {
       const col = COLORS[b.id % COLORS.length];
       this.cuboid(b.x, b.y, z, b.x + S, b.y + S, z + S, col, { stroke: b === e.held ? '#000' : 'rgba(0,0,0,0.55)' });
       if (b === cand) {
-        c.save(); c.shadowColor = '#ffab00'; c.shadowBlur = 14 * this.dpr;
+        c.save();
         const pts = [P(b.x, b.y + S, z), P(b.x + S, b.y + S, z), P(b.x + S, b.y + S, z + S), P(b.x, b.y + S, z + S)];
         this.poly(pts, null, '#ff6d00', 4);
         this.poly([P(b.x, b.y, z), P(b.x + S, b.y, z), P(b.x + S, b.y + S, z), P(b.x, b.y + S, z)], null, '#ff6d00', 4);

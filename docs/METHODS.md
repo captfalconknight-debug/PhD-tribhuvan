@@ -1,6 +1,6 @@
 # Virtual Box and Block Test (VBBT): rules and metric definitions
 
-This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.3.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
+This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.4.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
 
 ---
 
@@ -42,9 +42,9 @@ The app has two display modes, chosen before a trial and recorded with it (`view
 
 ## 2. Hand tracking (laptop webcam)
 
-**Device and model.** The laptop's built-in webcam is requested at 640 × 480 pixels and 30 frames per second (the browser may give a different resolution; the actual one is recorded). Hands are detected with Google MediaPipe Hand Landmarker (`@mediapipe/tasks-vision` 0.10.35, `hand_landmarker.task` float16 model, version 1). It runs entirely inside the browser on the participant's laptop. Video frames are processed in memory only: no images or video are recorded, stored or transmitted, and the app makes no network requests once loaded. The model returns 21 landmarks per hand in image coordinates and in approximate 3D "world" coordinates (metres), plus a left/right label. Up to two hands are detected, with confidence thresholds of 0.5 for detection, presence and tracking.
+**Device and model.** The laptop's built-in webcam is requested at 640 × 480 pixels and 30 frames per second (the browser may give a different resolution; the actual one is recorded). Hands are detected with Google MediaPipe Hand Landmarker (`@mediapipe/tasks-vision` 0.10.35, `hand_landmarker.task` float16 model, version 1). It runs entirely inside the browser on the participant's laptop. Video frames are processed in memory only: no images or video are recorded, stored or transmitted, and the app makes no network requests once loaded. The model returns 21 landmarks per hand in image coordinates and in approximate 3D "world" coordinates (metres), plus a left/right label. One hand is tracked (`numHands = 1`; tracking a second hand would make MediaPipe run its palm detector on every frame and lower the frame rate), with confidence thresholds of 0.5 for detection, presence and tracking. Participants rest the non-tested hand out of view.
 
-**Processing back-end.** When the camera is connected, the model is created with both the GPU (WebGL) and CPU (XNNPACK) back-ends. Each is timed on five frames of the live video, and the faster one is kept. The chosen back-end and its time per frame are recorded with every trial.
+**Processing back-end.** When the camera is connected, the model is created with both the GPU (WebGL) and CPU (XNNPACK) back-ends. Each is timed on five frames of the live video, and the faster one is kept. To leave processor time for hand tracking, the scene is redrawn only when a new camera frame arrives (or every 40 ms), at a pixel ratio capped at 1.25. The chosen back-end and its time per frame are recorded with every trial.
 
 **Tested-hand selection.** Only the hand whose label matches the tested hand is used. Whether MediaPipe's labels refer to the participant's own hand depends on whether the camera image is mirrored. This is checked once per laptop during the camera check (Section 3): if the only visible hand keeps the opposite label for about 1 second, the labels are treated as swapped. The result is recorded (`setup.handednessInverted`). Before the camera check has been done, a single visible hand is used even if its label does not match (`setup.handSelection`). *Hand continuity:* MediaPipe can flip the left/right label for a frame or two during fast movement. If no hand carries the tested label, but a visible hand's wrist is within 0.12 (normalised image units) of the tested hand's wrist position seen within the last 0.5 s, that hand is still followed.
 
@@ -141,6 +141,7 @@ All times are in seconds, distances in virtual cm, speeds in virtual cm/s.
 | `trackingLossEpisodes` | Number of times tracking changed from present to lost. |
 | `trackingLostTime` | Total time with tracking lost. |
 | `inputFps` | New camera detections processed during the trial ÷ trial duration. |
+| `setup.detectMsMean` | Mean time (ms) MediaPipe took per camera frame during the trial (diagnostic for low frame rates). |
 | `lowFpsFlag` | `true` if `inputFps` < 25. Such trials should be repeated or excluded according to a pre-specified rule. |
 | `sampleRate`, `sampleCount`, `presentFraction` | Engine updates per second, number of raw samples, and the fraction of samples with the hand tracked. |
 | `targetHidden`, `reserveLeft` | Depth-simulation counters at the end of the trial. |
