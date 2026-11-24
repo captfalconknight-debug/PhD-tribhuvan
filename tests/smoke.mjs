@@ -9,7 +9,7 @@
  * Also checks that the webcam pipeline loads MediaPipe from the local vendor/
  * folder using Chromium's fake camera (no real hand, so no tracking expected).
  *
- * Usage:  node tests/smoke.mjs [path-to-html]   (default: index.html)
+ * Usage:  node tests/smoke.mjs [path-to-html | https://live-site/]   (default: index.html)
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -46,7 +46,7 @@ try {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
 
-  await page.goto(base + page0);
+  await page.goto(/^https?:/.test(page0) ? page0 : base + page0);
   await page.fill('#pid', 'SMOKE01');
   await page.fill('#age', '45');
   await page.selectOption('#sex', 'Female');
