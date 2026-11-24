@@ -1,0 +1,6 @@
+@mediapipe/tasks-vision 0.10.35 (npm, Apache-2.0) - vision_bundle.mjs and wasm/ files.
+hand_landmarker.task - float16/1 model from storage.googleapis.com/mediapipe-models (Apache-2.0).
+
+Why 0.10.35 and not 1.x: MediaPipe 1.x sends usage/performance metrics to a
+Google server (odml.pa.googleapis.com). 0.10.35 contains no such endpoint, so
+the app makes no network requests at all after loading.

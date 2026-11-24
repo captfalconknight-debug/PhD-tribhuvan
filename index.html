@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Virtual Box and Block Test</title>
+  <meta name="description" content="Virtual Box and Block Test using laptop webcam hand tracking (research prototype).">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Virtual Box and Block Test</h1>
+    <span class="muted">Research prototype · version <span id="version"></span></span>
+  </header>
+
+  <main class="layout">
+    <!-- ======================= Left panel ======================= -->
+    <aside class="panel">
+      <fieldset class="card" id="formParticipant">
+        <legend>1. Participant</legend>
+        <label><span>Participant ID <span class="req">*</span></span>
+          <input id="pid" autocomplete="off" spellcheck="false" placeholder="e.g. P001">
+        </label>
+        <div class="row2">
+          <label><span>Age <span class="req">*</span></span>
+            <input id="age" type="number" min="18" max="100" inputmode="numeric">
+          </label>
+          <label><span>Sex <span class="req">*</span></span>
+            <select id="sex">
+              <option value="">Select…</option>
+              <option>Female</option><option>Male</option><option>Other</option><option>Prefer not to say</option>
+            </select>
+          </label>
+        </div>
+        <label><span>Dominant hand <span class="req">*</span></span>
+          <select id="dominant">
+            <option value="">Select…</option>
+            <option value="right">Right</option><option value="left">Left</option><option value="both">Both (ambidextrous)</option>
+          </select>
+        </label>
+        <div class="label"><span>Tested hand <span class="req">*</span></span></div>
+        <div class="seg" role="radiogroup" aria-label="Tested hand">
+          <label><input type="radio" name="hand" value="right" checked><span>Right hand</span></label>
+          <label><input type="radio" name="hand" value="left"><span>Left hand</span></label>
+        </div>
+        <label>Notes
+          <textarea id="notes" rows="2"></textarea>
+        </label>
+      </fieldset>
+
+      <fieldset class="card" id="formDevice">
+        <legend>2. Hand tracking</legend>
+        <label>Input
+          <select id="device">
+            <option value="camera">Laptop webcam</option>
+            <option value="mouse">Mouse (simulation)</option>
+          </select>
+        </label>
+        <button id="connect" type="button">Connect</button>
+        <div id="devStatus" class="status">Not connected</div>
+        <canvas id="preview" width="320" height="240" hidden></canvas>
+        <video id="video" playsinline muted hidden></video>
+        <button id="setupBtn" type="button" disabled>Camera check &amp; calibration</button>
+        <div id="calibStatus" class="status">Not calibrated</div>
+        <label><span>Reach area: <output id="reachOut">100%</output></span>
+          <input id="reach" type="range" min="50" max="150" step="5" value="100">
+          <span class="hint">Higher = more hand movement needed</span>
+        </label>
+        <label><span>Pinch sensitivity: <output id="sensOut">5</output></span>
+          <input id="sens" type="range" min="1" max="10" step="1" value="5">
+          <span class="hint">Higher = a pinch is detected more easily</span>
+        </label>
+      </fieldset>
+
+      <fieldset class="card" id="formRun">
+        <legend>3. Run</legend>
+        <label class="check"><input type="checkbox" id="practice"> Practice trial (15 s, not saved)</label>
+        <label class="check"><input type="checkbox" id="highlight" checked> Highlight the block that can be picked up</label>
+        <div class="buttons">
+          <button id="start" type="button" class="primary">Start</button>
+          <button id="abort" type="button" class="danger" disabled>Abort</button>
+        </div>
+        <div id="formMsg" class="status" role="alert"></div>
+      </fieldset>
+    </aside>
+
+    <!-- ======================= Stage ======================= -->
+    <section class="main">
+      <div class="hud" aria-live="polite">
+        <div class="hud-item"><span class="hud-label">Time left</span><span id="hudTime" class="hud-value">60</span></div>
+        <div class="hud-item"><span class="hud-label">Blocks moved</span><span id="hudScore" class="hud-value">0</span></div>
+        <div class="hud-item"><span class="hud-label">Hand</span><span id="hudTrack" class="hud-value track">–</span></div>
+      </div>
+      <div class="stage">
+        <canvas id="stage" aria-label="Box and Block Test scene"></canvas>
+        <div id="overlay" class="overlay" hidden></div>
+      </div>
+
+      <section id="results" class="card" hidden>
+        <h2 id="resultsTitle">Result</h2>
+        <div class="result-score"><span id="resScore">0</span><span class="unit">blocks</span></div>
+        <div id="resFlag" class="status warn" hidden></div>
+        <table class="kv" id="resTable"></table>
+      </section>
+
+      <section class="card">
+        <h2>Saved sessions (stored in this browser on this laptop)</h2>
+        <div class="buttons">
+          <button id="dlCsv" type="button">Download all sessions (CSV)</button>
+          <button id="dlJson" type="button">Download last trial (JSON)</button>
+          <button id="clearData" type="button" class="danger">Clear data…</button>
+        </div>
+        <div class="table-wrap">
+          <table id="sessions">
+            <thead><tr>
+              <th>Date / time</th><th>Participant</th><th>Age</th><th>Hand</th><th>Device</th>
+              <th>Trial</th><th>Score</th><th>Blocks/min</th><th>FPS</th><th>Flag</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="consent">
+    <form method="dialog">
+      <h2 id="consentTitle"></h2>
+      <div id="consentText"></div>
+      <div class="buttons">
+        <button value="cancel" type="submit">Cancel</button>
+        <button value="agree" type="submit" class="primary" id="consentAgree"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
