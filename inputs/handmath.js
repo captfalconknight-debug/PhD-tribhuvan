@@ -14,23 +14,42 @@ function dist3(a, b) {
 /**
  * Pinch ratio = thumb-tip to index-tip distance / wrist to middle-MCP distance.
  * Dividing by a hand-size reference makes it independent of hand size and of
- * distance from the camera. Uses MediaPipe "world" landmarks (metres, 3D)
- * when available, which are less sensitive to hand rotation; otherwise uses
- * image landmarks corrected for the image aspect ratio.
+ * distance from the camera. Two estimates are averaged, because each fails in a
+ * different way:
+ *   - 3D "world" landmarks (metres): robust to hand rotation, but their depth
+ *     estimate is noisy;
+ *   - 2D image landmarks (x, y only, corrected for the image aspect ratio):
+ *     steadier frame to frame, but shortened when the hand is turned.
+ * If world landmarks are missing, the 2D estimate alone is used.
  */
 export function pinchRatio(world, image, aspect = 4 / 3) {
-  if (world && world.length > 9) {
-    return dist3(world[LM.THUMB_TIP], world[LM.INDEX_TIP]) / Math.max(1e-6, dist3(world[LM.WRIST], world[LM.MIDDLE_MCP]));
+  let r2 = null;
+  if (image && image.length > 9) {
+    const d2 = (a, b) => Math.hypot((a.x - b.x) * aspect, a.y - b.y);
+    r2 = d2(image[LM.THUMB_TIP], image[LM.INDEX_TIP]) / Math.max(1e-6, d2(image[LM.WRIST], image[LM.MIDDLE_MCP]));
   }
-  const sc = (p) => ({ x: p.x * aspect, y: p.y, z: (p.z || 0) * aspect });
-  const L = image.map(sc);
-  return dist3(L[LM.THUMB_TIP], L[LM.INDEX_TIP]) / Math.max(1e-6, dist3(L[LM.WRIST], L[LM.MIDDLE_MCP]));
+  let r3 = null;
+  if (world && world.length > 9) {
+    r3 = dist3(world[LM.THUMB_TIP], world[LM.INDEX_TIP]) / Math.max(1e-6, dist3(world[LM.WRIST], world[LM.MIDDLE_MCP]));
+  }
+  if (r2 != null && r3 != null) return (r2 + r3) / 2;
+  return r3 ?? r2;
 }
 
-/** Cursor = midpoint of thumb tip and index tip, mirrored horizontally (u = 1 - x). */
+/** Palm landmarks used for the pointer: wrist and the four finger knuckles (MCP joints). */
+export const PALM = [0, 5, 9, 13, 17];
+
+/**
+ * Pointer position = centre of the palm (mean of wrist and the index, middle,
+ * ring and little finger MCP joints), mirrored horizontally (u = 1 - x).
+ * These points hardly move when the fingers open and close, so the pointer
+ * stays where it is at the moment of pinching and releasing (the fingertips
+ * are the noisiest landmarks and move during the pinch itself).
+ */
 export function cursorFromLandmarks(image) {
-  const a = image[LM.THUMB_TIP]; const b = image[LM.INDEX_TIP];
-  return { u: 1 - (a.x + b.x) / 2, v: (a.y + b.y) / 2 };
+  let x = 0; let y = 0;
+  for (const i of PALM) { x += image[i].x; y += image[i].y; }
+  return { u: 1 - x / PALM.length, v: y / PALM.length };
 }
 
 /** Palm length (wrist to middle MCP) as a fraction of the image width — a rough distance cue. */
@@ -40,15 +59,15 @@ export function palmSize(image, aspect = 4 / 3) {
 }
 
 /** Default thresholds used before a participant is calibrated. */
-export const DEFAULT_PINCH = { close: 0.35, open: 0.50 };
+export const DEFAULT_PINCH = { close: 0.35, open: 0.55 };
 
 /** Release only after the hand has been clearly open for this many camera frames in a row. */
-export const RELEASE_FRAMES = 3;
+export const RELEASE_FRAMES = 4;
 
 /**
  * Pinch thresholds from a per-participant calibration and the 1–10 sensitivity slider.
  *   calib = { open: median ratio with an open hand, pinch: median ratio while pinching }
- * Close threshold at 50 % and open threshold at 70 % of the way from pinch to open
+ * Close threshold at 50 % and open threshold at 75 % of the way from pinch to open
  * (the gap between them is the hysteresis). A pinch is therefore recognised
  * before the fingertips fully touch, and the hand must open clearly to let go.
  * Sensitivity 5 = neutral; each step scales both thresholds by 12 %
@@ -59,7 +78,7 @@ export function pinchThresholds(calib, sensitivity = 5) {
   if (calib && calib.open > calib.pinch) {
     const r = calib.open - calib.pinch;
     close = calib.pinch + 0.50 * r;
-    open = calib.pinch + 0.70 * r;
+    open = calib.pinch + 0.75 * r;
   } else {
     ({ close, open } = DEFAULT_PINCH);
   }
@@ -70,8 +89,8 @@ export function pinchThresholds(calib, sensitivity = 5) {
 /**
  * Pinch state with hysteresis and a release delay.
  *  - Closing: as soon as the ratio falls below `close` (fast grasp).
- *  - Opening: only when the smoothed ratio stays above `open` for RELEASE_FRAMES
- *    consecutive frames, so a one- or two-frame tracking flicker during a fast
+ *  - Opening: only when the smoothed ratio stays above `open` for RELEASE_FRAMES (4)
+ *    consecutive frames, so a brief tracking flicker during a fast
  *    carry does not drop the block. The pinch must really be broken.
  * The ratio is smoothed with an exponential moving average (weight 0.6 on the
  * newest frame) to reduce landmark jitter.

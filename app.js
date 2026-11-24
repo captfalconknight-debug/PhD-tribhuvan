@@ -48,7 +48,8 @@ const state = {
   calib: null,            // result of the camera check, per participant + hand
   engine: null,
   idleEngine: new VBBTEngine({ testedHand: 'right', mode: viewMode() }),  // static pile shown when idle
-  filters: { u: new OneEuroFilter(1.0, 4.0), v: new OneEuroFilter(1.0, 4.0) },
+  // One Euro smoothing of the pointer: 0.6 Hz minimum cutoff (steady when still), beta 3.0
+  filters: { u: new OneEuroFilter(0.6, 3.0), v: new OneEuroFilter(0.6, 3.0) },
   lastSeq: -1, lastUpdate: 0, wasPresent: false,
   t0: 0, countdownStart: 0, handSince: null,
   trial: null,            // metadata of the running trial
@@ -169,7 +170,7 @@ function readHand(now) {
   const fy = (R.v1 - v) / (R.v1 - R.v0);
   const x = Math.max(-4, Math.min(57.7, BOX_X0 + fx * (BOX_X1 - BOX_X0)));
   const y = Math.max(-1, Math.min(33, REACH_Y0 + fy * (REACH_Y1 - REACH_Y0)));
-  return { present: true, x, y, pinch: r.pinch, seq: r.seq, raw: r };
+  return { present: true, x, y, pinch: r.pinch, ratio: r.ratioSmooth, seq: r.seq, raw: r };
 }
 
 // ---------------------------------------------------------------------------

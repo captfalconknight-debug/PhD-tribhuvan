@@ -34,6 +34,7 @@ export const BOX = Object.freeze({
 export const DEFAULTS = Object.freeze({
   duration: 60,             // seconds
   grabRadius: 3.0,          // cm, cursor-to-block-centre distance allowed for a grasp
+  grabWindow: 0.3,          // s, after the pinch closes a block within reach can still be caught
   lossGraceMs: 500,         // keep holding a block this long after tracking is lost
   gravity: 981,             // cm/s^2
   slideSpeed: 40,           // cm/s, speed at which a block slides off the partition top
@@ -152,6 +153,7 @@ export class VBBTEngine {
     this.held = null;               // block currently held
     this.carry = null;              // running measurements of the current carry
     this.prevPinch = false;
+    this.pendingGrab = null;        // time the current grasp attempt started (pinch closed)
     this.cursor = null;             // last known cursor {x, y}
     this.trackingPresent = true;    // trial only starts once a hand is detected
     this.lostSince = null;
@@ -291,9 +293,20 @@ export class VBBTEngine {
       }
       this.cursor = { x: input.x, y: input.y };
 
-      // 2) Pinch edges: closing = grasp attempt, opening = release ------------
-      if (input.pinch && !this.prevPinch && !this.held) this.tryGrab();
-      else if (!input.pinch && this.prevPinch && this.held) this.release(false);
+      // 2) Pinch: closing = grasp attempt, opening = release ---------------------
+      // A grasp attempt starts when the pinch closes. For up to grabWindow (0.3 s)
+      // while the pinch stays closed, the nearest block that comes within reach is
+      // caught; if none does, the attempt is a missed grasp.
+      if (this.held) {
+        if (!input.pinch && this.prevPinch) this.release(false);
+      } else {
+        if (input.pinch && !this.prevPinch) { this.c.graspAttempts++; this.pendingGrab = tc; }
+        if (this.pendingGrab != null) {
+          if (input.pinch && tc - this.pendingGrab <= this.p.grabWindow + EPS) {
+            if (this.tryGrab()) this.pendingGrab = null;
+          } else this.missGrab();
+        }
+      }
       this.prevPinch = !!input.pinch;
 
       // 3) Carry the held block toward the cursor (with partition collision) --
@@ -310,6 +323,7 @@ export class VBBTEngine {
       x: input.present ? r3(input.x) : null,
       y: input.present ? r3(input.y) : null,
       pinch: input.present ? (input.pinch ? 1 : 0) : null,
+      ratio: input.present && input.ratio != null ? r3(input.ratio) : null,   // smoothed pinch ratio (webcam)
       held: this.held ? this.held.id : null,
       present: input.present ? 1 : 0,
     });
@@ -317,14 +331,16 @@ export class VBBTEngine {
     if (tc >= end - EPS) this.finish();
   }
 
+  missGrab() {
+    this.pendingGrab = null;
+    this.c.missedGrasps++;
+    this.log('grasp_missed', { x: r3(this.cursor?.x), y: r3(this.cursor?.y) });
+  }
+
+  /** Grab the candidate block under the cursor, if any. Returns true on success. */
   tryGrab() {
-    this.c.graspAttempts++;
     const b = this.grabCandidate(this.cursor.x, this.cursor.y);
-    if (!b) {
-      this.c.missedGrasps++;
-      this.log('grasp_missed', { x: r3(this.cursor.x), y: r3(this.cursor.y) });
-      return;
-    }
+    if (!b) return false;
     this.c.successfulGrasps++;
     b.state = 'held';
     b.vy = 0;
@@ -342,7 +358,8 @@ export class VBBTEngine {
       peakSpeed: 0,
       hist: [{ t: this.t, x: cx, y: cy }],
     };
-    this.log('grab', { block: b.id, side: this.carry.from });
+    this.log('grab', { block: b.id, side: this.carry.from, delay: r3(this.t - this.pendingGrab) });
+    return true;
   }
 
   /** Move the held block toward the cursor in small steps so it can never tunnel. */
@@ -530,6 +547,7 @@ export class VBBTEngine {
 
   finish() {
     if (this.finished) return;
+    if (this.pendingGrab != null && !this.held) this.missGrab();
     if (!this.trackingPresent && this.lostSince != null) this.c.lostTime += this.t - this.lostSince;
     this.finalScore = this.score();   // block still in the hand is NOT counted
     this.finished = true;

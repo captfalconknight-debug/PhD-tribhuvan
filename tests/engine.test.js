@@ -323,3 +323,26 @@ test('3D: no tunnelling through the partition; returns reduce the score', () => 
   assert.equal(s.score, 1);
   assert.equal(s.returns, 1);
 });
+
+test('grab window: a block reached within 0.3 s of pinching is caught; later is a missed grasp', () => {
+  const sim = makeSim();
+  const b = topBlock(sim.e, 'right');
+  const cx = b.x + S / 2; const cy = b.y + S / 2;
+  sim.go(cx, cy + 6, false, 5);        // above the pile, out of reach
+  sim.go(cx, cy + 6, true, 1);          // pinch closes here (nothing in reach)
+  sim.go(cx, cy, true, 10);             // arrives on the block within ~0.17 s
+  assert.ok(sim.e.held, 'block caught within the grab window');
+  assert.equal(sim.e.summary().missedGrasps, 0);
+  sim.go(10, 25, true, 20); sim.go(10, 25, false, 5); sim.wait(20);
+
+  const b2 = topBlock(sim.e, 'right');
+  sim.go(b2.x + S / 2, b2.y + S / 2 + 6, false, 5);
+  sim.go(b2.x + S / 2, b2.y + S / 2 + 6, true, 1);
+  sim.wait(30);                          // 0.5 s pinched in empty space
+  sim.go(b2.x + S / 2, b2.y + S / 2, true, 5);
+  assert.equal(sim.e.held, null, 'too late: no grab without a new pinch');
+  const s = sim.e.summary();
+  assert.equal(s.graspAttempts, 2);
+  assert.equal(s.successfulGrasps, 1);
+  assert.equal(s.missedGrasps, 1);
+});

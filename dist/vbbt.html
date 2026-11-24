@@ -289,6 +289,7 @@ const BOX = Object.freeze({
 const DEFAULTS = Object.freeze({
   duration: 60,             // seconds
   grabRadius: 3.0,          // cm, cursor-to-block-centre distance allowed for a grasp
+  grabWindow: 0.3,          // s, after the pinch closes a block within reach can still be caught
   lossGraceMs: 500,         // keep holding a block this long after tracking is lost
   gravity: 981,             // cm/s^2
   slideSpeed: 40,           // cm/s, speed at which a block slides off the partition top
@@ -407,6 +408,7 @@ class VBBTEngine {
     this.held = null;               // block currently held
     this.carry = null;              // running measurements of the current carry
     this.prevPinch = false;
+    this.pendingGrab = null;        // time the current grasp attempt started (pinch closed)
     this.cursor = null;             // last known cursor {x, y}
     this.trackingPresent = true;    // trial only starts once a hand is detected
     this.lostSince = null;
@@ -546,9 +548,20 @@ class VBBTEngine {
       }
       this.cursor = { x: input.x, y: input.y };
 
-      // 2) Pinch edges: closing = grasp attempt, opening = release ------------
-      if (input.pinch && !this.prevPinch && !this.held) this.tryGrab();
-      else if (!input.pinch && this.prevPinch && this.held) this.release(false);
+      // 2) Pinch: closing = grasp attempt, opening = release ---------------------
+      // A grasp attempt starts when the pinch closes. For up to grabWindow (0.3 s)
+      // while the pinch stays closed, the nearest block that comes within reach is
+      // caught; if none does, the attempt is a missed grasp.
+      if (this.held) {
+        if (!input.pinch && this.prevPinch) this.release(false);
+      } else {
+        if (input.pinch && !this.prevPinch) { this.c.graspAttempts++; this.pendingGrab = tc; }
+        if (this.pendingGrab != null) {
+          if (input.pinch && tc - this.pendingGrab <= this.p.grabWindow + EPS) {
+            if (this.tryGrab()) this.pendingGrab = null;
+          } else this.missGrab();
+        }
+      }
       this.prevPinch = !!input.pinch;
 
       // 3) Carry the held block toward the cursor (with partition collision) --
@@ -565,6 +578,7 @@ class VBBTEngine {
       x: input.present ? r3(input.x) : null,
       y: input.present ? r3(input.y) : null,
       pinch: input.present ? (input.pinch ? 1 : 0) : null,
+      ratio: input.present && input.ratio != null ? r3(input.ratio) : null,   // smoothed pinch ratio (webcam)
       held: this.held ? this.held.id : null,
       present: input.present ? 1 : 0,
     });
@@ -572,14 +586,16 @@ class VBBTEngine {
     if (tc >= end - EPS) this.finish();
   }
 
+  missGrab() {
+    this.pendingGrab = null;
+    this.c.missedGrasps++;
+    this.log('grasp_missed', { x: r3(this.cursor?.x), y: r3(this.cursor?.y) });
+  }
+
+  /** Grab the candidate block under the cursor, if any. Returns true on success. */
   tryGrab() {
-    this.c.graspAttempts++;
     const b = this.grabCandidate(this.cursor.x, this.cursor.y);
-    if (!b) {
-      this.c.missedGrasps++;
-      this.log('grasp_missed', { x: r3(this.cursor.x), y: r3(this.cursor.y) });
-      return;
-    }
+    if (!b) return false;
     this.c.successfulGrasps++;
     b.state = 'held';
     b.vy = 0;
@@ -597,7 +613,8 @@ class VBBTEngine {
       peakSpeed: 0,
       hist: [{ t: this.t, x: cx, y: cy }],
     };
-    this.log('grab', { block: b.id, side: this.carry.from });
+    this.log('grab', { block: b.id, side: this.carry.from, delay: r3(this.t - this.pendingGrab) });
+    return true;
   }
 
   /** Move the held block toward the cursor in small steps so it can never tunnel. */
@@ -785,6 +802,7 @@ class VBBTEngine {
 
   finish() {
     if (this.finished) return;
+    if (this.pendingGrab != null && !this.held) this.missGrab();
     if (!this.trackingPresent && this.lostSince != null) this.c.lostTime += this.t - this.lostSince;
     this.finalScore = this.score();   // block still in the hand is NOT counted
     this.finished = true;
@@ -1333,23 +1351,42 @@ function dist3(a, b) {
 /**
  * Pinch ratio = thumb-tip to index-tip distance / wrist to middle-MCP distance.
  * Dividing by a hand-size reference makes it independent of hand size and of
- * distance from the camera. Uses MediaPipe "world" landmarks (metres, 3D)
- * when available, which are less sensitive to hand rotation; otherwise uses
- * image landmarks corrected for the image aspect ratio.
+ * distance from the camera. Two estimates are averaged, because each fails in a
+ * different way:
+ *   - 3D "world" landmarks (metres): robust to hand rotation, but their depth
+ *     estimate is noisy;
+ *   - 2D image landmarks (x, y only, corrected for the image aspect ratio):
+ *     steadier frame to frame, but shortened when the hand is turned.
+ * If world landmarks are missing, the 2D estimate alone is used.
  */
 function pinchRatio(world, image, aspect = 4 / 3) {
-  if (world && world.length > 9) {
-    return dist3(world[LM.THUMB_TIP], world[LM.INDEX_TIP]) / Math.max(1e-6, dist3(world[LM.WRIST], world[LM.MIDDLE_MCP]));
+  let r2 = null;
+  if (image && image.length > 9) {
+    const d2 = (a, b) => Math.hypot((a.x - b.x) * aspect, a.y - b.y);
+    r2 = d2(image[LM.THUMB_TIP], image[LM.INDEX_TIP]) / Math.max(1e-6, d2(image[LM.WRIST], image[LM.MIDDLE_MCP]));
   }
-  const sc = (p) => ({ x: p.x * aspect, y: p.y, z: (p.z || 0) * aspect });
-  const L = image.map(sc);
-  return dist3(L[LM.THUMB_TIP], L[LM.INDEX_TIP]) / Math.max(1e-6, dist3(L[LM.WRIST], L[LM.MIDDLE_MCP]));
+  let r3 = null;
+  if (world && world.length > 9) {
+    r3 = dist3(world[LM.THUMB_TIP], world[LM.INDEX_TIP]) / Math.max(1e-6, dist3(world[LM.WRIST], world[LM.MIDDLE_MCP]));
+  }
+  if (r2 != null && r3 != null) return (r2 + r3) / 2;
+  return r3 ?? r2;
 }
 
-/** Cursor = midpoint of thumb tip and index tip, mirrored horizontally (u = 1 - x). */
+/** Palm landmarks used for the pointer: wrist and the four finger knuckles (MCP joints). */
+const PALM = [0, 5, 9, 13, 17];
+
+/**
+ * Pointer position = centre of the palm (mean of wrist and the index, middle,
+ * ring and little finger MCP joints), mirrored horizontally (u = 1 - x).
+ * These points hardly move when the fingers open and close, so the pointer
+ * stays where it is at the moment of pinching and releasing (the fingertips
+ * are the noisiest landmarks and move during the pinch itself).
+ */
 function cursorFromLandmarks(image) {
-  const a = image[LM.THUMB_TIP]; const b = image[LM.INDEX_TIP];
-  return { u: 1 - (a.x + b.x) / 2, v: (a.y + b.y) / 2 };
+  let x = 0; let y = 0;
+  for (const i of PALM) { x += image[i].x; y += image[i].y; }
+  return { u: 1 - x / PALM.length, v: y / PALM.length };
 }
 
 /** Palm length (wrist to middle MCP) as a fraction of the image width — a rough distance cue. */
@@ -1359,15 +1396,15 @@ function palmSize(image, aspect = 4 / 3) {
 }
 
 /** Default thresholds used before a participant is calibrated. */
-const DEFAULT_PINCH = { close: 0.35, open: 0.50 };
+const DEFAULT_PINCH = { close: 0.35, open: 0.55 };
 
 /** Release only after the hand has been clearly open for this many camera frames in a row. */
-const RELEASE_FRAMES = 3;
+const RELEASE_FRAMES = 4;
 
 /**
  * Pinch thresholds from a per-participant calibration and the 1–10 sensitivity slider.
  *   calib = { open: median ratio with an open hand, pinch: median ratio while pinching }
- * Close threshold at 50 % and open threshold at 70 % of the way from pinch to open
+ * Close threshold at 50 % and open threshold at 75 % of the way from pinch to open
  * (the gap between them is the hysteresis). A pinch is therefore recognised
  * before the fingertips fully touch, and the hand must open clearly to let go.
  * Sensitivity 5 = neutral; each step scales both thresholds by 12 %
@@ -1378,7 +1415,7 @@ function pinchThresholds(calib, sensitivity = 5) {
   if (calib && calib.open > calib.pinch) {
     const r = calib.open - calib.pinch;
     close = calib.pinch + 0.50 * r;
-    open = calib.pinch + 0.70 * r;
+    open = calib.pinch + 0.75 * r;
   } else {
     ({ close, open } = DEFAULT_PINCH);
   }
@@ -1389,8 +1426,8 @@ function pinchThresholds(calib, sensitivity = 5) {
 /**
  * Pinch state with hysteresis and a release delay.
  *  - Closing: as soon as the ratio falls below `close` (fast grasp).
- *  - Opening: only when the smoothed ratio stays above `open` for RELEASE_FRAMES
- *    consecutive frames, so a one- or two-frame tracking flicker during a fast
+ *  - Opening: only when the smoothed ratio stays above `open` for RELEASE_FRAMES (4)
+ *    consecutive frames, so a brief tracking flicker during a fast
  *    carry does not drop the block. The pinch must really be broken.
  * The ratio is smoothed with an exponential moving average (weight 0.6 on the
  * newest frame) to reduce landmark jitter.
@@ -1466,7 +1503,7 @@ function percentile(a, p) {
   return s[lo] + (s[hi] - s[lo]) * (i - lo);
 }
 
-return { LM, pinchRatio, cursorFromLandmarks, palmSize, DEFAULT_PINCH, RELEASE_FRAMES, pinchThresholds, PinchDetector, selectHand, nearestHand, median, percentile };
+return { LM, pinchRatio, PALM, cursorFromLandmarks, palmSize, DEFAULT_PINCH, RELEASE_FRAMES, pinchThresholds, PinchDetector, selectHand, nearestHand, median, percentile };
 })();
 
 // ===== config.js =====
@@ -1475,7 +1512,7 @@ const __m8 = (() => {
  * config.js — settings the researcher may edit without touching the rest of the code.
  */
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 /** Trial durations in seconds. */
 const TEST_DURATION = 60;
@@ -1721,6 +1758,7 @@ class CameraInput {
     const { u, v } = cursorFromLandmarks(hand.image);
     this.latest = {
       present: true, u, v, pinch, ratio, t: now,
+      ratioSmooth: this.pinch.value,
       palm: palmSize(hand.image, aspect),
       label: hand.label, score: hand.score,
       wrist: { u: 1 - hand.image[0].x, v: hand.image[0].y },
@@ -2178,7 +2216,8 @@ const state = {
   calib: null,            // result of the camera check, per participant + hand
   engine: null,
   idleEngine: new VBBTEngine({ testedHand: 'right', mode: viewMode() }),  // static pile shown when idle
-  filters: { u: new OneEuroFilter(1.0, 4.0), v: new OneEuroFilter(1.0, 4.0) },
+  // One Euro smoothing of the pointer: 0.6 Hz minimum cutoff (steady when still), beta 3.0
+  filters: { u: new OneEuroFilter(0.6, 3.0), v: new OneEuroFilter(0.6, 3.0) },
   lastSeq: -1, lastUpdate: 0, wasPresent: false,
   t0: 0, countdownStart: 0, handSince: null,
   trial: null,            // metadata of the running trial
@@ -2299,7 +2338,7 @@ function readHand(now) {
   const fy = (R.v1 - v) / (R.v1 - R.v0);
   const x = Math.max(-4, Math.min(57.7, BOX_X0 + fx * (BOX_X1 - BOX_X0)));
   const y = Math.max(-1, Math.min(33, REACH_Y0 + fy * (REACH_Y1 - REACH_Y0)));
-  return { present: true, x, y, pinch: r.pinch, seq: r.seq, raw: r };
+  return { present: true, x, y, pinch: r.pinch, ratio: r.ratioSmooth, seq: r.seq, raw: r };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Virtual Box and Block Test (VBBT): rules and metric definitions
 
-This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.2.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
+This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.3.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
 
 ---
 
@@ -48,9 +48,9 @@ The app has two display modes, chosen before a trial and recorded with it (`view
 
 **Tested-hand selection.** Only the hand whose label matches the tested hand is used. Whether MediaPipe's labels refer to the participant's own hand depends on whether the camera image is mirrored. This is checked once per laptop during the camera check (Section 3): if the only visible hand keeps the opposite label for about 1 second, the labels are treated as swapped. The result is recorded (`setup.handednessInverted`). Before the camera check has been done, a single visible hand is used even if its label does not match (`setup.handSelection`). *Hand continuity:* MediaPipe can flip the left/right label for a frame or two during fast movement. If no hand carries the tested label, but a visible hand's wrist is within 0.12 (normalised image units) of the tested hand's wrist position seen within the last 0.5 s, that hand is still followed.
 
-**Cursor position.** The cursor is the midpoint between the thumb tip (landmark 4) and the index fingertip (landmark 8) in image coordinates, mirrored horizontally (*u* = 1 − *x*) so that movement on screen matches a mirror.
+**Cursor position.** The cursor follows the **centre of the palm**: the mean image position of the wrist (landmark 0) and the index, middle, ring and little-finger MCP joints (landmarks 5, 9, 13, 17), mirrored horizontally (*u* = 1 − *x*) so that movement on screen matches a mirror. These points hardly move when the thumb and index open and close. The pointer therefore stays still at the moment of grasping and releasing. Fingertip landmarks, in contrast, are the noisiest and move during the pinch itself. *(Versions before 1.3.0 used the thumb-tip/index-tip midpoint, which made the pointer drift and jump during pinching.)*
 
-**Smoothing.** *u* and *v* are each smoothed with a One Euro filter (Casiez et al., 2012) with minimum cutoff 1.0 Hz, speed coefficient β = 4.0 and derivative cutoff 1.0 Hz. The filter is reset whenever the hand reappears after a tracking loss.
+**Smoothing.** *u* and *v* are each smoothed with a One Euro filter (Casiez et al., 2012) with minimum cutoff 0.6 Hz, speed coefficient β = 3.0 and derivative cutoff 1.0 Hz. The filter is reset whenever the hand reappears after a tracking loss.
 
 **Mapping hand movement to the box (reach area).** A rectangle in the camera image, the reach area, is mapped linearly onto the box:
 
@@ -63,16 +63,16 @@ The reach area comes from the participant's calibration (Section 3). If no calib
 
 **Pinch (grasp) detection.**
 
-*Pinch ratio* = 3D distance between thumb tip (4) and index tip (8) ÷ 3D distance between wrist (0) and middle-finger MCP joint (9), computed from MediaPipe world landmarks. Normalising by a hand-size reference makes the ratio largely independent of hand size and of distance from the camera.
+*Pinch ratio* = distance between thumb tip (4) and index tip (8) ÷ distance between wrist (0) and middle-finger MCP joint (9). Normalising by a hand-size reference makes the ratio largely independent of hand size and of distance from the camera. Two estimates are averaged because they fail in different ways: one from the 3D world landmarks (robust to hand rotation, but with a noisy depth estimate) and one from the 2D image landmarks (*x*, *y*, corrected for the image aspect ratio; steadier frame to frame, but shortened when the hand is turned).
 
 The pinch state uses **hysteresis**: the hand is "pinched" when the ratio falls below the *close* threshold, and "open" again only when it rises above the higher *open* threshold. This stops the state flickering near a single threshold.
 
 - *Calibrated thresholds:* with *R*_open the median ratio with the hand open and *R*_pinch the median ratio while pinching (Section 3), and *r* = *R*_open − *R*_pinch:
-  close = *R*_pinch + 0.50*r*, open = *R*_pinch + 0.70*r*.
+  close = *R*_pinch + 0.50*r*, open = *R*_pinch + 0.75*r*.
   A pinch is therefore recognised before the fingertips fully touch, and the hand must open clearly to let go.
-- *Default thresholds (no calibration):* close = 0.35, open = 0.50.
+- *Default thresholds (no calibration):* close = 0.35, open = 0.55.
 - *Pinch-sensitivity slider (1–10, default 5):* both thresholds are multiplied by 1 + 0.12 × (sensitivity − 5). Higher values make a pinch easier to detect and hold more firmly.
-- *Smoothing and release delay:* the ratio is smoothed with an exponential moving average (weight 0.6 on the newest frame). The pinch closes on the first frame in which the raw or smoothed ratio falls below *close*. It opens only after the smoothed ratio has stayed above *open* for **3 consecutive camera frames** (about 100 ms at 30 fps). A held block is therefore not dropped by a brief flicker of the landmarks; the pinch has to be genuinely released.
+- *Smoothing and release delay:* the ratio is smoothed with an exponential moving average (weight 0.6 on the newest frame). The pinch closes on the first frame in which the raw or smoothed ratio falls below *close*. It opens only after the smoothed ratio has stayed above *open* for **4 consecutive camera frames** (about 130 ms at 30 fps). A held block is therefore not dropped by a brief flicker of the landmarks; the pinch has to be genuinely released.
 - *Live pinch meter:* the camera preview shows the smoothed ratio as a bar, with the close (green) and open (red) thresholds and the detected state. This helps the assessor confirm detection and choose the sensitivity.
 
 ## 3. Camera check and calibration (before testing)
@@ -92,7 +92,7 @@ All camera-check results are stored with every trial that follows (columns `setu
 
 **Trial sequence.** Consent is recorded once per participant ID. The app then waits until the tested hand has been detected continuously for 0.6 s, shows a 3-2-1 countdown (1 s per number), and runs the test for **60 s**. An optional **15 s practice trial** follows the same rules and is not saved.
 
-**Grasping.** A grasp attempt is the moment the pinch closes (open to pinched) while no block is held. The block grasped is the **nearest uncovered resting block** whose centre is within **3.0 cm** of the cursor ("uncovered" means no block rests on top of it). If there is no such block, the attempt is a *missed grasp*. Keeping the pinch closed and moving over a block does not grasp it; the hand must open and pinch again. The offset between the cursor and the block centre at the moment of grasping is kept during the carry, so the block does not jump. Only one block can be held at a time. Blocks can also be grasped from the target compartment.
+**Grasping.** A grasp attempt is the moment the pinch closes (open to pinched) while no block is held. The block grasped is the **nearest uncovered resting block** whose centre is within **3.0 cm** of the cursor ("uncovered" means no block rests on top of it). For up to **0.3 s** after the pinch closes, while it stays closed, the first block that comes within that distance is grasped (the *grab window*, which tolerates a pinch made slightly before the hand reaches the block). If none does, or the pinch opens first, the attempt is a *missed grasp*. After the grab window, keeping the pinch closed and moving over a block does not grasp it; the hand must open and pinch again. The delay between pinch closure and grasp is logged with each grab event. The offset between the cursor and the block centre at the moment of grasping is kept during the carry, so the block does not jump. Only one block can be held at a time. Blocks can also be grasped from the target compartment.
 
 **Carrying.** The held block follows the cursor but cannot pass through the partition. Each frame, the movement is split into sub-steps of at most 0.2 cm. Horizontal and vertical movements are resolved separately, and any sub-step that would overlap the partition is stopped at its surface. A block held lower than the partition top therefore cannot "tunnel" through it, even if the cursor jumps between frames. The held block is kept between the inner box walls and between the box floor and 34 cm. It passes over other blocks without colliding (simplification).
 
@@ -126,7 +126,7 @@ All times are in seconds, distances in virtual cm, speeds in virtual cm/s.
 | `transfers` | Releases of a block picked up from the source side whose centre is on the target side at release. |
 | `graspAttempts` | Number of pinch closures while no block was held. |
 | `successfulGrasps` | Grasp attempts that picked up a block. |
-| `missedGrasps` | Grasp attempts with no grabbable block within 3.0 cm. |
+| `missedGrasps` | Grasp attempts in which no block came within 3.0 cm during the 0.3 s grab window. |
 | `failedReleases` | Blocks picked up from the source side and released on the source side. |
 | `returns` | Blocks picked up from the target side and released on the source side. |
 | `repositions` | Blocks picked up from the target side and released on the target side. |
@@ -149,7 +149,7 @@ All times are in seconds, distances in virtual cm, speeds in virtual cm/s.
 
 **Raw data (JSON export of the last trial):**
 
-- *samples*, one per engine update (one per new camera frame in webcam mode): time, cursor *x* and *y* (cm), pinch state, id of the held block, and hand present;
+- *samples*, one per engine update (one per new camera frame in webcam mode): time, cursor *x* and *y* (cm), pinch state, smoothed pinch ratio (webcam), id of the held block, and hand present;
 - *events*: start, grab, grasp_missed, release, forced_release, transfer, return, partition_slide, fold_target, fold_source, tracking_lost, tracking_restored, end. Each has a time stamp and details.
 
 ## 7. Software verification
@@ -163,7 +163,8 @@ The engine was tested with automated unit tests (Node.js, `node --test`):
 - tracking loss holds the block for 500 ms and then force-releases it;
 - depth-simulation accounting never exceeds 150 blocks and correctly scores all 150 transfers;
 - 3D view: all 150 blocks are present at the start with an identical pile for every participant; grasping takes the top block, front-most on a tie; blocks spread over all 9 depth rows without towers; all 150 can be transferred; no tunnelling through the partition; returns lower the score;
-- the hand-tracking maths (pinch ratio, hysteresis, release delay, calibration thresholds, hand selection and continuity, mirroring) and the One Euro filter behave as specified.
+- a block reached within the 0.3 s grab window is caught, and a later one counts as a missed grasp;
+- the hand-tracking maths (pinch ratio, palm-centre pointer, hysteresis, release delay, calibration thresholds, hand selection and continuity, mirroring) and the One Euro filter behave as specified.
 
 An automated browser test (Playwright, Chromium) runs complete practice and test trials in mouse-simulation mode, in both the 3D and 2D views. It also checks that the webcam pipeline loads the bundled model and makes no external network requests.
 

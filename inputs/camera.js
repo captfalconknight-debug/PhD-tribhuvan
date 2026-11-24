@@ -203,6 +203,7 @@ export class CameraInput {
     const { u, v } = cursorFromLandmarks(hand.image);
     this.latest = {
       present: true, u, v, pinch, ratio, t: now,
+      ratioSmooth: this.pinch.value,
       palm: palmSize(hand.image, aspect),
       label: hand.label, score: hand.score,
       wrist: { u: 1 - hand.image[0].x, v: hand.image[0].y },
