@@ -156,6 +156,9 @@ try {
   await page.waitForFunction(() => /Camera ready|refused|not|Could not/i.test(document.querySelector('#devStatus').textContent), null, { timeout: 120000 });
   const status = await page.textContent('#devStatus');
   console.log('Camera status:', status);
+  const camOptions = await page.$$eval('#camSelect option', (o) => o.map((x) => x.textContent));
+  console.log('Camera list:', camOptions.join(' | '));
+  if (camOptions.length < 2) fail('camera list not filled after connecting');
   if (!/Camera ready/.test(status)) fail('camera pipeline did not start: ' + status);
   await page.waitForTimeout(1500);
   const camFps = await page.evaluate(() => window.vbbt.state.input.fps());

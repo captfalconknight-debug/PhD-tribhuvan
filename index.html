@@ -56,6 +56,11 @@
             <option value="mouse">Mouse (simulation)</option>
           </select>
         </label>
+        <label id="camChoice"><span>Camera</span>
+          <select id="camSelect"><option value="">Default camera</option></select>
+          <span class="hint">Choose a phone camera here after connecting it (see README)</span>
+        </label>
+        <label class="check" id="flipChoice"><input type="checkbox" id="flipCam"> Camera image is already mirrored</label>
         <button id="connect" type="button">Connect</button>
         <div id="devStatus" class="status">Not connected</div>
         <canvas id="preview" width="320" height="240" hidden></canvas>

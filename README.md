@@ -57,7 +57,22 @@ node scripts/build-single.js
 3. **Turn on graphics acceleration in Chrome/Edge:** Settings → System → *Use graphics acceleration when available* → on, then restart the browser. After Connect, the status line says *GPU processing* or *CPU processing*; the app picks whichever is faster on that laptop.
 4. **Show only the tested hand.** The app tracks one hand; if the other hand is in view, tracking is slower and can lock onto the wrong hand.
 5. Good **lighting** also helps: tracking recovers faster when the hand is clearly visible.
-6. Check the result: the low-FPS message shows the hand-tracking time per frame. Above about 40 ms means the laptop itself is too slow for 25 fps. Use a faster laptop for data collection, and record the device (it is saved with each trial).
+6. **Gaming laptops with two graphics chips** (e.g. HP Victus, with NVIDIA or AMD graphics): in Windows Settings → System → Display → Graphics, set Chrome/Edge to **High performance** so the browser uses the faster graphics card. Keep the laptop plugged in: these laptops slow down a lot on battery.
+7. **Dim light can lower the frame rate by itself:** many webcams lengthen the exposure in poor light and deliver only about 15 frames per second, however fast the laptop is. If the status line shows a low processing time (e.g. under 25 ms) but the frame rate is still low, add light in front of the participant.
+8. Check the result: the low-FPS message shows the hand-tracking time per frame. Above about 40 ms means the laptop itself is too slow for 25 fps. Use a faster laptop for data collection, and record the device (it is saved with each trial).
+
+### Using a phone as the camera
+The phone only supplies the picture; hand tracking still runs on the laptop.
+
+1. **Connect the phone as a webcam.** Use one of these:
+   - **Android + Windows 11:** Settings → Bluetooth & devices → *Mobile devices* → turn on *Allow this PC to access your mobile devices*, link the phone, and turn on its camera for "connected camera". No extra app is needed.
+   - **Any Android or iPhone:** a webcam app with a Windows driver, for example *Camo*, *DroidCam* or *Iriun Webcam* (install it on both the phone and the laptop). **Use a USB cable** if the app allows it: it gives less delay and a steadier frame rate than Wi-Fi.
+2. In the VBBT, choose *Laptop webcam* and press **Connect** once. Then pick the phone in the **Camera** list. The app reconnects with it.
+3. **Check the mirroring.** In the small preview, raise your **right** hand. It must appear on the **right** side, like a mirror. If it appears on the left, tick **Camera image is already mirrored** (some phone apps mirror the picture themselves). If the app has its own mirror setting, you can switch that off instead.
+4. Put the phone on a **stand at chest height**, in landscape orientation, 40–60 cm from the hand, and keep it on the charger.
+5. Run **Camera check & calibration** again (changing the camera clears the calibration).
+
+> **For your studies:** a phone camera is a different measurement device from the laptop webcam. The camera name and mirror setting are saved with every trial (`setup.cameraLabel`, `setup.cameraMirroredInput`). Use the same camera set-up for all participants, or test agreement before pooling data.
 
 ### Changing the consent text
 Edit `CONSENT_TEXT` in `config.js` with your ethics-approved wording, then update the hosted site (see `docs/HOSTING.md`).

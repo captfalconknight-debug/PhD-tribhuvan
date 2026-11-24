@@ -90,7 +90,13 @@ export class CameraInput {
    * @param {HTMLCanvasElement} [o.preview] small canvas for the mirrored preview + skeleton
    * @param {'left'|'right'} o.testedHand
    */
-  constructor({ video, preview, testedHand = 'right' }) {
+  /**
+   * @param {string} [o.deviceId]  which camera to use (e.g. a phone used as a webcam); default camera if empty
+   * @param {boolean} [o.flip]     true if the camera already sends a mirrored image
+   */
+  constructor({ video, preview, testedHand = 'right', deviceId = '', flip = false }) {
+    this.deviceId = deviceId;
+    this.flip = flip;
     this.kind = 'camera';
     this.video = video;
     this.preview = preview;
@@ -109,6 +115,16 @@ export class CameraInput {
     this.trackedIndex = -1;
   }
 
+  /** Image x (0..1) -> on-screen mirrored u (0..1). */
+  mx(x) { return this.flip ? x : 1 - x; }
+
+  /** Cameras available to the browser (names are only shown after camera permission). */
+  static async list() {
+    try {
+      return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    } catch { return []; }
+  }
+
   setTestedHand(h) { this.testedHand = h; this.pinch.reset(); }
   setPinchThresholds(th) { this.pinch.setThresholds(th); }
 
@@ -117,7 +133,10 @@ export class CameraInput {
       throw new Error('The camera can only be used on a secure page (https:// or http://localhost).');
     }
     this.stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, facingMode: 'user' },
+      video: {
+        width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 },
+        ...(this.deviceId ? { deviceId: { exact: this.deviceId } } : { facingMode: 'user' }),
+      },
       audio: false,
     });
     this.video.srcObject = this.stream;
@@ -132,6 +151,7 @@ export class CameraInput {
     const track = this.stream.getVideoTracks()[0];
     const st = track.getSettings ? track.getSettings() : {};
     this.info = {
+      deviceId: st.deviceId || this.deviceId || '',
       label: track.label || 'Webcam',
       width: this.video.videoWidth || st.width,
       height: this.video.videoHeight || st.height,
@@ -194,26 +214,26 @@ export class CameraInput {
     // two during fast movement. If no hand has the tested label but a hand is close
     // to where the tested hand was a moment ago (< 0.5 s), keep following it.
     if (!hand && this.continuity && this.lastWrist && now - this.lastWrist.t < 500) {
-      const best = nearestHand(all, this.lastWrist);
+      const best = nearestHand(all, this.lastWrist, 0.12, this.flip);
       if (best) hand = { ...best, continued: true };
     }
     this.seq++;
     this.lastLandmarks = hand ? hand.image : null;
     this.trackedIndex = hand ? hand.index : -1;
-    if (hand) this.lastWrist = { u: 1 - hand.image[0].x, v: hand.image[0].y, t: now };
+    if (hand) this.lastWrist = { u: this.mx(hand.image[0].x), v: hand.image[0].y, t: now };
     if (!hand) {
       this.latest = { present: false, u: this.latest.u, v: this.latest.v, pinch: this.latest.pinch, t: now, others: all.map((h) => h.label) };
       return;
     }
     const ratio = pinchRatio(hand.world, hand.image, aspect);
     const pinch = this.pinch.update(ratio);
-    const { u, v } = cursorFromLandmarks(hand.image);
+    const { u, v } = cursorFromLandmarks(hand.image, this.flip);
     this.latest = {
       present: true, u, v, pinch, ratio, t: now,
       ratioSmooth: this.pinch.value,
       palm: palmSize(hand.image, aspect),
       label: hand.label, score: hand.score,
-      wrist: { u: 1 - hand.image[0].x, v: hand.image[0].y },
+      wrist: { u: this.mx(hand.image[0].x), v: hand.image[0].y },
       others: all.map((h) => h.label),
       assumed: !!hand.assumed,
       continued: !!hand.continued,
@@ -246,7 +266,7 @@ export class CameraInput {
     const ctx = c.getContext('2d');
     const w = c.width; const h = c.height;
     ctx.save();
-    ctx.translate(w, 0); ctx.scale(-1, 1);          // mirror, like looking in a mirror
+    if (!this.flip) { ctx.translate(w, 0); ctx.scale(-1, 1); }   // mirror, like looking in a mirror
     ctx.drawImage(this.video, 0, 0, w, h);
     (res.landmarks || []).forEach((pts, i) => {
       const tested = this.trackedIndex === i;

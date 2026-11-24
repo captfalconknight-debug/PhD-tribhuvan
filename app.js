@@ -23,7 +23,7 @@ import {
 const $ = (id) => document.getElementById(id);
 const ui = {
   pid: $('pid'), age: $('age'), sex: $('sex'), dominant: $('dominant'), notes: $('notes'),
-  device: $('device'), connect: $('connect'), devStatus: $('devStatus'), preview: $('preview'), video: $('video'),
+  device: $('device'), camSelect: $('camSelect'), flipCam: $('flipCam'), connect: $('connect'), devStatus: $('devStatus'), preview: $('preview'), video: $('video'),
   setupBtn: $('setupBtn'), calibStatus: $('calibStatus'),
   reach: $('reach'), reachOut: $('reachOut'), sens: $('sens'), sensOut: $('sensOut'),
   view: $('view'), practice: $('practice'), highlight: $('highlight'), start: $('start'), abort: $('abort'), formMsg: $('formMsg'),
@@ -87,8 +87,12 @@ async function connect() {
       state.inputInfo = await state.input.start();
       setStatus(ui.devStatus, 'Mouse ready: move over the box, hold the button to pinch.', 'ok');
     } else {
-      state.input = new CameraInput({ video: ui.video, preview: ui.preview, testedHand: testedHand() });
+      state.input = new CameraInput({
+        video: ui.video, preview: ui.preview, testedHand: testedHand(),
+        deviceId: ui.camSelect.value, flip: ui.flipCam.checked,
+      });
       state.inputInfo = await state.input.start();
+      await listCameras(state.inputInfo.deviceId);
       ui.preview.hidden = false;
       const i = state.inputInfo;
       setStatus(ui.devStatus, `Camera ready (${i.width}×${i.height}, ${i.delegate} processing, ~${i.timings[i.delegate]} ms per frame).`, 'ok');
@@ -102,6 +106,26 @@ async function connect() {
   ui.connect.disabled = false;
   ui.connect.textContent = state.input ? 'Reconnect' : 'Connect';
   ui.setupBtn.disabled = !(state.input && state.input.kind === 'camera');
+}
+
+/** Fill the camera list (names appear once camera permission has been given). */
+async function listCameras(selectedId) {
+  const cams = await CameraInput.list();
+  const keep = selectedId ?? ui.camSelect.value;
+  ui.camSelect.innerHTML = '';
+  const def = document.createElement('option'); def.value = ''; def.textContent = 'Default camera'; ui.camSelect.appendChild(def);
+  cams.forEach((c, i) => {
+    const o = document.createElement('option');
+    o.value = c.deviceId; o.textContent = c.label || `Camera ${i + 1}`;
+    ui.camSelect.appendChild(o);
+  });
+  if ([...ui.camSelect.options].some((o) => o.value === keep)) ui.camSelect.value = keep;
+}
+
+function showDeviceOptions() {
+  const cam = ui.device.value === 'camera';
+  $('camChoice').hidden = !cam;
+  $('flipChoice').hidden = !cam;
 }
 
 function disconnect() {
@@ -280,6 +304,8 @@ function finishTrial() {
     inputFps,
     lowFpsFlag: cam ? inputFps < FPS_WARNING : false,
     setup: {
+      cameraLabel: cam ? state.inputInfo.label : null,
+      cameraMirroredInput: cam ? state.input.flip : null,
       cameraResolution: cam ? `${state.inputInfo.width}x${state.inputInfo.height}` : null,
       processing: cam ? state.inputInfo.delegate : null,
       processingMsPerFrame: cam ? state.inputInfo.timings : null,
@@ -500,7 +526,16 @@ const stamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 // Wiring
 // ---------------------------------------------------------------------------
 ui.connect.addEventListener('click', connect);
-ui.device.addEventListener('change', () => { disconnect(); setStatus(ui.devStatus, 'Not connected'); ui.connect.textContent = 'Connect'; });
+ui.device.addEventListener('change', () => { disconnect(); showDeviceOptions(); setStatus(ui.devStatus, 'Not connected'); ui.connect.textContent = 'Connect'; });
+// Changing the camera or the mirror setting reconnects and needs a new camera check.
+for (const el of [ui.camSelect, ui.flipCam]) {
+  el.addEventListener('change', async () => {
+    resetCalibration('camera changed');
+    if (state.input?.kind === 'camera') await connect();
+  });
+}
+showDeviceOptions();
+listCameras();
 ui.setupBtn.addEventListener('click', runSetup);
 ui.start.addEventListener('click', startTrial);
 ui.abort.addEventListener('click', () => abortTrial());

@@ -57,6 +57,8 @@ test('pointer is the palm centre, mirrored, and does not move when the fingers p
   assert.ok(Math.abs(open.v - (0.6 - 0.09 / 5)) < 1e-9);       // mean of wrist + 4 knuckles
   const pinched = cursorFromLandmarks(hand(0.0, { ox: 0.2, oy: 0.6 }));
   assert.deepEqual(pinched, open, 'closing the fingers does not move the pointer');
+  // A camera that already sends a mirrored image: no extra mirroring.
+  assert.ok(Math.abs(cursorFromLandmarks(hand(0.1, { ox: 0.2, oy: 0.6 }), true).u - 0.2) < 1e-9);
 });
 
 test('selectHand picks the tested hand and can invert labels', () => {
@@ -80,6 +82,7 @@ test('hand continuity follows the hand near the last wrist position', () => {
   const far = { image: hand(0.1, { ox: 0.80, oy: 0.5 }) };    // mirrored wrist u = 0.20
   assert.equal(nearestHand([far, near], { u: 0.68, v: 0.52 }), near);
   assert.equal(nearestHand([far], { u: 0.68, v: 0.52 }), null, 'too far away: not the same hand');
+  assert.equal(nearestHand([far, near], { u: 0.78, v: 0.52 }, 0.12, true), far, 'mirrored camera');
 });
 
 test('median and percentile', () => {

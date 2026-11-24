@@ -46,10 +46,12 @@ export const PALM = [0, 5, 9, 13, 17];
  * stays where it is at the moment of pinching and releasing (the fingertips
  * are the noisiest landmarks and move during the pinch itself).
  */
-export function cursorFromLandmarks(image) {
+export function cursorFromLandmarks(image, flip = false) {
   let x = 0; let y = 0;
   for (const i of PALM) { x += image[i].x; y += image[i].y; }
-  return { u: 1 - x / PALM.length, v: y / PALM.length };
+  x /= PALM.length;
+  // flip = the camera already delivers a mirrored image (some phone-camera apps)
+  return { u: flip ? x : 1 - x, v: y / PALM.length };
 }
 
 /** Palm length (wrist to middle MCP) as a fraction of the image width — a rough distance cue. */
@@ -141,10 +143,11 @@ export function selectHand(result, testedHand, invert = false, allowSingle = fal
  * Hand continuity: the visible hand whose wrist is nearest to the tested hand's
  * last known wrist position (mirrored image coordinates), if within maxDist.
  */
-export function nearestHand(all, lastWrist, maxDist = 0.12) {
+export function nearestHand(all, lastWrist, maxDist = 0.12, flip = false) {
   let best = null; let bestD = maxDist;
   for (const h of all) {
-    const d = Math.hypot((1 - h.image[0].x) - lastWrist.u, h.image[0].y - lastWrist.v);
+    const u = flip ? h.image[0].x : 1 - h.image[0].x;
+    const d = Math.hypot(u - lastWrist.u, h.image[0].y - lastWrist.v);
     if (d < bestD) { best = h; bestD = d; }
   }
   return best;

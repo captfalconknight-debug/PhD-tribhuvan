@@ -70,7 +70,7 @@ export async function runSetupCheck({ cam, canvas, overlay, testedHand, signal }
     const w = v.videoWidth * s; const h = v.videoHeight * s;
     const x0 = (W - w) / 2; const y0 = (H - h) / 2;
     ctx.save();
-    ctx.translate(x0 + w, y0); ctx.scale(-1, 1);
+    if (cam.flip) ctx.translate(x0, y0); else { ctx.translate(x0 + w, y0); ctx.scale(-1, 1); }
     ctx.drawImage(v, 0, 0, w, h);
     ctx.restore();
     const l = cam.read();
@@ -79,8 +79,8 @@ export async function runSetupCheck({ cam, canvas, overlay, testedHand, signal }
       ctx.strokeStyle = '#00e676'; ctx.lineWidth = 4;
       for (const [a, b] of BONES) {
         ctx.beginPath();
-        ctx.moveTo(x0 + (1 - lms[a].x) * w, y0 + lms[a].y * h);
-        ctx.lineTo(x0 + (1 - lms[b].x) * w, y0 + lms[b].y * h);
+        ctx.moveTo(x0 + cam.mx(lms[a].x) * w, y0 + lms[a].y * h);
+        ctx.lineTo(x0 + cam.mx(lms[b].x) * w, y0 + lms[b].y * h);
         ctx.stroke();
       }
     }

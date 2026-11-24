@@ -1,4 +1,5 @@
 /* Large, high-contrast UI for participants of all ages. */
+[hidden] { display: none !important; }
 :root {
   --bg: #f3f5f9;
   --card: #ffffff;
