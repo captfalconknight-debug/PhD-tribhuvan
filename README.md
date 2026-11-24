@@ -34,10 +34,11 @@ node scripts/build-single.js
 1. **Participant form:** enter the ID (a code such as P001, never a name), age, sex, dominant hand and tested hand.
 2. **Input:** choose *Laptop webcam* and press **Connect**. Allow the camera when the browser asks. The first time, loading takes up to a minute.
 3. **Camera check & calibration:** press it and follow the four on-screen steps (camera, open hand, pinch, reach). Do this for **each participant and each hand**. Changing the participant ID or the tested hand clears the calibration.
-4. **Practice:** tick *Practice trial* and press **Start**. It lasts 15 s and is not saved.
-5. **Test:** untick *Practice* and press **Start**. On a participant's first trial the consent screen appears; once they agree, the timestamp is stored. The app waits for the hand, counts down 3-2-1, then runs for 60 s.
-6. The **result** card appears and the trial is saved in this browser.
-7. **Download all sessions (CSV)** at the end of each day. Data is stored only in this browser on this laptop. Clearing browser data deletes it. **Download last trial (JSON)** straight after a trial if you need the raw movement samples, because only the most recent trial's raw data is kept.
+4. **View:** *3D view* (default) shows the box in perspective with all 150 blocks. *2D front view* is the earlier flat version. Pick one for your study and keep it for everyone.
+5. **Practice:** tick *Practice trial* and press **Start**. It lasts 15 s and is not saved.
+6. **Test:** untick *Practice* and press **Start**. On a participant's first trial the consent screen appears; once they agree, the timestamp is stored. The app waits for the hand, counts down 3-2-1, then runs for 60 s.
+7. The **result** card appears and the trial is saved in this browser.
+8. **Download all sessions (CSV)** at the end of each day. Data is stored only in this browser on this laptop. Clearing browser data deletes it. **Download last trial (JSON)** straight after a trial if you need the raw movement samples, because only the most recent trial's raw data is kept.
 
 **Esc** or **Abort** stops a trial without saving it.
 
@@ -64,8 +65,8 @@ Edit `CONSENT_TEXT` in `config.js` with your ethics-approved wording, then updat
 
 **Automated tests (all passing):**
 ```bash
-npm test         # 20 unit tests: game engine, pinch/hand maths, smoothing filter
-npm run smoke    # browser test: full practice + 60 s trial in mouse mode, saving, CSV/JSON export,
+npm test         # 24 unit tests: game engine, pinch/hand maths, smoothing filter
+npm run smoke    # browser test (3D view; VBBT_VIEW=2d for 2D): full practice + 60 s trial in mouse mode, saving, CSV/JSON export,
                  # webcam pipeline loads the bundled model, camera check starts/cancels, no external requests
 node tests/smoke.mjs dist/vbbt.html   # same test on the single-file build
 ```
@@ -98,7 +99,8 @@ The smoke test needs Playwright (`npm i -D playwright && npx playwright install 
 | `index.html`, `styles.css` | Page layout and styles (large, high-contrast) |
 | `app.js` | User interface, trial flow, hand-to-box mapping, saving and export |
 | `engine.js` | Game rules, physics, scoring and metrics (no browser code; unit-tested) |
-| `render.js` | Draws the box on the canvas |
+| `render.js` | Draws the 2D front view |
+| `render3d.js` | Draws the 3D perspective view (own projection maths, no 3D library) |
 | `setup.js` | Camera check and calibration wizard |
 | `inputs/camera.js` | Webcam + MediaPipe hand tracking |
 | `inputs/handmath.js` | Pinch ratio, hysteresis, hand selection (pure functions) |

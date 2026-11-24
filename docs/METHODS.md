@@ -1,6 +1,6 @@
 # Virtual Box and Block Test (VBBT): rules and metric definitions
 
-This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.0.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
+This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.1.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
 
 ---
 
@@ -23,6 +23,22 @@ The VBBT reproduces the standard Box and Block Test (BBT) as a two-dimensional f
 Because the view is from the front, a block has to be **lifted over the partition** to reach the other compartment. That reproduces the lift-carry-release movement of the physical test.
 
 **Source and target compartments.** Blocks are picked up from the compartment on the same side as the tested hand and placed in the opposite compartment. For example, when the right hand is tested, blocks start on the right and go to the left. The screen shows a mirror view, so the participant's right hand appears on the right of the screen. The target compartment is tinted green, and the labels "PICK UP HERE" and "PLACE HERE" are shown above the compartments.
+
+### 1.1 Display modes: 3D view (default) and 2D front view
+
+The app has two display modes, chosen before a trial and recorded with it (`viewMode`). The task rules, hand tracking, scoring and metrics are the same in both. They differ in how the box is drawn and in how the depth of the pile is handled.
+
+**3D view (`viewMode = 3d`, default).** The box is drawn in perspective, as seen from in front of and above it. A virtual pinhole camera is placed at (26.85, 46, −50) cm looking at (26.85, 6, 13) cm, about 33° downwards. Each block is drawn as a shaded cube, and blocks are painted from far to near. The front wall is drawn see-through (22 % opacity) so the pile is visible. **All 150 blocks are shown as a real pile.** Each compartment holds 10 columns (left–right) × 9 rows (front–back) per layer, given an inner depth of 23.8 cm. At the start, the bottom layer of the source compartment is full (90 blocks). The other 60 blocks sit on top of 60 positions picked by a seeded random shuffle (seed 150), so every participant gets the identical starting pile. No blocks are hidden and no reserve is used.
+
+*Depth is handled automatically.* A laptop webcam cannot reliably measure how far the hand reaches forwards or backwards, so the hand controls only the left–right position and the height (as in the 2D view), and the depth row is set by fixed rules:
+- **Grasping:** among uncovered blocks equally close to the cursor (the same column and height in different rows), the block in the **front-most** row is taken.
+- **Carrying:** once the held block's bottom is above the box walls (8.5 cm), its row is continuously set to the row it would land in (see below). A shadow on the pile shows where it will drop.
+- **Landing:** a released block drops into the depth row where the stack under it is **lowest** at that left–right position. On a tie, the row nearest its current row is used, and after that the front-most row. Blocks therefore spread across the compartment instead of forming towers, much as real blocks tumble and scatter.
+- In mouse-simulation mode the pointer moves in the vertical plane through the centre of the front row.
+
+**2D front view (`viewMode = 2d`).** A flat front view of the box. Because a front view cannot show depth, only three layers × 10 columns are drawn per compartment, and the depth of the pile is simulated with a hidden reserve (see "Depth simulation" in Section 4).
+
+> The two modes are different versions of the instrument. Choose one before data collection and use it for all participants. Do not pool scores across modes without an agreement analysis.
 
 ## 2. Hand tracking (laptop webcam)
 
@@ -69,7 +85,7 @@ All camera-check results are stored with every trial that follows (columns `setu
 
 ## 4. Task rules
 
-**Starting state.** The source compartment shows 30 blocks (3 layers × 10 columns). The other 120 blocks are in a hidden reserve, representing the depth of the real pile (see "Depth simulation" below).
+**Starting state.** In the 3D view all 150 blocks are in the source compartment (Section 1.1). In the 2D view the source compartment shows 30 blocks (3 layers × 10 columns), and the other 120 blocks are in a hidden reserve representing the depth of the real pile (see "Depth simulation" below).
 
 **Trial sequence.** Consent is recorded once per participant ID. The app then waits until the tested hand has been detected continuously for 0.6 s, shows a 3-2-1 countdown (1 s per number), and runs the test for **60 s**. An optional **15 s practice trial** follows the same rules and is not saved.
 
@@ -81,7 +97,7 @@ All camera-check results are stored with every trial that follows (columns `setu
 
 **Tracking loss.** If the tested hand is not detected (or no new detection has arrived for 300 ms), tracking is lost. A held block stays held for up to **250 ms**. If tracking has not returned by then, the block is force-released and falls as above. Both the loss episode and the forced release are logged.
 
-**Depth simulation.** Only three layers of blocks are drawn per compartment:
+**Depth simulation (2D view only; in the 3D view all blocks are shown and none are hidden).** Only three layers of blocks are drawn per compartment:
 
 - *Source side:* while the reserve is not empty, whenever fewer than 30 blocks are visible in the source compartment, one block per frame is moved from the reserve into the lowest free, supported grid position. The participant therefore always sees a full pile until the reserve runs out.
 - *Target side:* a block that comes to rest in a fourth layer (bottom ≥ 7.5 cm) is removed from view and added to a hidden counter. It **still counts** in the score.
@@ -90,7 +106,7 @@ All camera-check results are stored with every trial that follows (columns `setu
 
 ## 5. Scoring
 
-**Score (primary outcome)** = number of blocks on the target side at the end of the 60 s trial = visible blocks whose centre is on the target side of the partition midline (resting, falling or sliding), plus blocks folded into the hidden target counter.
+**Score (primary outcome)** = number of blocks on the target side at the end of the 60 s trial = blocks whose centre is on the target side of the partition midline (resting, falling or sliding), plus, in the 2D view, blocks folded into the hidden target counter.
 
 - A block released over the target side counts immediately, even while it is still falling.
 - A block still held at 60 s is **not** counted.
@@ -143,13 +159,14 @@ The engine was tested with automated unit tests (Node.js, `node --test`):
 - a returned block lowers the score;
 - tracking loss holds the block for 250 ms and then force-releases it;
 - depth-simulation accounting never exceeds 150 blocks and correctly scores all 150 transfers;
+- 3D view: all 150 blocks are present at the start with an identical pile for every participant; grasping takes the top block, front-most on a tie; blocks spread over all 9 depth rows without towers; all 150 can be transferred; no tunnelling through the partition; returns lower the score;
 - the hand-tracking maths (pinch ratio, hysteresis, calibration thresholds, hand selection, mirroring) and the One Euro filter behave as specified.
 
-An automated browser test (Playwright, Chromium) runs complete practice and test trials in mouse-simulation mode. It also checks that the webcam pipeline loads the bundled model and makes no external network requests.
+An automated browser test (Playwright, Chromium) runs complete practice and test trials in mouse-simulation mode, in both the 3D and 2D views. It also checks that the webcam pipeline loads the bundled model and makes no external network requests.
 
 ## 8. Differences from the physical BBT (to report as limitations)
 
-- **Two-dimensional task.** There is no depth: blocks are not reached into a three-dimensional pile, and the hand does not have to cross the partition physically.
+- **Hand movement in two dimensions.** The 3D view shows a three-dimensional pile, but the hand controls only left–right position and height; the depth row is chosen automatically. The participant does not reach forwards into the pile, and the hand does not have to cross the partition physically.
 - **No real grasp.** A pinch gesture replaces gripping a real 2.5 cm cube, so there is no grip force and no touch feedback.
 - **Visual feedback and delay.** Feedback is on a screen, with camera and processing delay (roughly one to three camera frames).
 - **Movement scale depends on the setup.** How far the hand has to move depends on the reach area (calibration and slider), camera field of view and distance. Keep the reach-area setting constant within a study and report it.

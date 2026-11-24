@@ -5,6 +5,7 @@
  */
 import { VBBTEngine } from './engine.js';
 import { Renderer } from './render.js';
+import { Renderer3D } from './render3d.js';
 import { OneEuroFilter } from './filters.js';
 import { MouseInput } from './inputs/mouse.js';
 import { CameraInput } from './inputs/camera.js';
@@ -25,7 +26,7 @@ const ui = {
   device: $('device'), connect: $('connect'), devStatus: $('devStatus'), preview: $('preview'), video: $('video'),
   setupBtn: $('setupBtn'), calibStatus: $('calibStatus'),
   reach: $('reach'), reachOut: $('reachOut'), sens: $('sens'), sensOut: $('sensOut'),
-  practice: $('practice'), highlight: $('highlight'), start: $('start'), abort: $('abort'), formMsg: $('formMsg'),
+  view: $('view'), practice: $('practice'), highlight: $('highlight'), start: $('start'), abort: $('abort'), formMsg: $('formMsg'),
   hudTime: $('hudTime'), hudScore: $('hudScore'), hudTrack: $('hudTrack'),
   stage: $('stage'), overlay: $('overlay'),
   results: $('results'), resultsTitle: $('resultsTitle'), resScore: $('resScore'), resFlag: $('resFlag'), resTable: $('resTable'),
@@ -38,14 +39,15 @@ const fieldsets = ['formParticipant', 'formDevice'].map($);
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-const renderer = new Renderer(ui.stage);
+const viewMode = () => (ui.view.value === '2d' ? '2d' : '3d');
+let renderer = viewMode() === '3d' ? new Renderer3D(ui.stage) : new Renderer(ui.stage);
 const state = {
   phase: 'idle',          // idle | setup | wait | countdown | running | done
   input: null,            // MouseInput | CameraInput
   inputInfo: null,
   calib: null,            // result of the camera check, per participant + hand
   engine: null,
-  idleEngine: new VBBTEngine({ testedHand: 'right' }),  // static pile shown when idle
+  idleEngine: new VBBTEngine({ testedHand: 'right', mode: viewMode() }),  // static pile shown when idle
   filters: { u: new OneEuroFilter(1.0, 4.0), v: new OneEuroFilter(1.0, 4.0) },
   lastSeq: -1, lastUpdate: 0, wasPresent: false,
   t0: 0, countdownStart: 0, handSince: null,
@@ -228,12 +230,13 @@ async function startTrial() {
       testedHand: hand,
       notes: ui.notes.value.trim(),
       device,
+      viewMode: viewMode(),
       trialType: practice ? 'practice' : 'test',
       trialNumber: practice ? null : nextTrialNumber(pid, hand, device),
       consentTimestamp: consentTs,
     },
   };
-  state.engine = new VBBTEngine({ testedHand: hand, duration: state.trial.duration });
+  state.engine = new VBBTEngine({ testedHand: hand, duration: state.trial.duration, mode: viewMode() });
   state.phase = 'wait';
   state.handSince = null;
   ui.results.hidden = true;
@@ -245,6 +248,7 @@ function setRunning(on) {
   fieldsets.forEach((f) => { f.disabled = on; });
   ui.start.disabled = on;
   ui.practice.disabled = on;
+  ui.view.disabled = on;
   ui.abort.disabled = !on;
 }
 
@@ -368,7 +372,9 @@ function frame(now) {
   if (hand) state.lastSeq = hand.seq;
 
   const eng = state.engine || state.idleEngine;
-  if (!state.engine && state.idleEngine.testedHand !== testedHand()) state.idleEngine = new VBBTEngine({ testedHand: testedHand() });
+  if (!state.engine && (state.idleEngine.testedHand !== testedHand() || state.idleEngine.mode !== viewMode())) {
+    state.idleEngine = new VBBTEngine({ testedHand: testedHand(), mode: viewMode() });
+  }
   renderer.draw(eng, {
     cursor: hand && hand.x != null ? { x: hand.x, y: hand.y, pinch: hand.pinch, present: hand.present }
       : (eng.cursor ? { ...eng.cursor, present: false, pinch: false } : null),
@@ -489,6 +495,9 @@ document.querySelectorAll('input[name=hand]').forEach((r) => r.addEventListener(
   if (state.input?.kind === 'camera') state.input.setTestedHand(testedHand());
   resetCalibration('tested hand changed');
 }));
+ui.view.addEventListener('change', () => {
+  renderer = viewMode() === '3d' ? new Renderer3D(ui.stage) : new Renderer(ui.stage);
+});
 ui.practice.addEventListener('change', () => { ui.hudTime.textContent = ui.practice.checked ? PRACTICE_DURATION : TEST_DURATION; });
 
 ui.dlCsv.addEventListener('click', () => {
@@ -522,4 +531,4 @@ if ('serviceWorker' in navigator && window.isSecureContext && location.protocol 
 }
 
 // Exposed for automated tests and debugging in the browser console.
-window.vbbt = { state, renderer };
+window.vbbt = { state, get renderer() { return renderer; } };

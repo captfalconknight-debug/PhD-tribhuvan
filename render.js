@@ -35,6 +35,9 @@ export class Renderer {
   px(x) { return this.ox + (x - VIEW.x0) * this.scale; }
   py(y) { return this.oy + (VIEW.y1 - y) * this.scale; }
 
+  /** World point -> canvas pixels (same interface as the 3D renderer; z is ignored). */
+  toScreen(x, y) { return [this.px(x), this.py(y)]; }
+
   /** Stage fractions (u, v; v = 0 at top) -> world cm. Used for every input. */
   toWorld(u, v) {
     const x = (u * this.canvas.width - this.ox) / this.scale + VIEW.x0;

@@ -1,7 +1,7 @@
 // Unit tests for engine.js. Run with:  node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { VBBTEngine, BOX, GEOM, gridLeft } from '../engine.js';
+import { VBBTEngine, BOX, GEOM, gridLeft, rowZ } from '../engine.js';
 
 const S = BOX.block;
 const FPS = 60;
@@ -245,4 +245,81 @@ test('raw samples and event log are recorded', () => {
   for (const k of ['t', 'x', 'y', 'pinch', 'held', 'present']) assert.ok(k in s);
   const types = e.events.map((ev) => ev.type);
   for (const k of ['grab', 'release', 'transfer']) assert.ok(types.includes(k), k);
+});
+
+// ============================== 3D view ==============================
+
+
+/** 3D scripted participant: grab whatever block the rules give at the top of the pile. */
+function carry3d(sim, fromSide, toX) {
+  const e = sim.e;
+  const b = topBlock(e, fromSide);
+  assert.ok(b, 'there should be a block to pick up');
+  const cx = b.x + S / 2; const cy = b.y + S / 2;
+  sim.go(cx, cy, false, 8);
+  sim.go(cx, cy, true, 2);
+  const held = e.held;
+  assert.ok(held, 'a block should be grasped');
+  sim.go(cx, 22, true, 8);
+  sim.go(toX, 22, true, 12);
+  sim.go(toX, 12, true, 4);
+  sim.go(toX, 12, false, 2);
+  sim.wait(25);
+  return held;
+}
+
+test('3D: all 150 blocks are visible in the source compartment, none hidden', () => {
+  const e = new VBBTEngine({ testedHand: 'right', mode: '3d' });
+  assert.equal(e.blocks.length, 150);
+  assert.equal(e.reserve, 0);
+  assert.equal(e.totalBlocks(), 150);
+  assert.ok(e.blocks.every((b) => e.sideOf(b) === 'right'));
+  assert.equal(e.blocks.filter((b) => b.y === 0).length, 90, 'bottom layer 10 x 9');
+  assert.equal(e.blocks.filter((b) => b.y === S).length, 60, 'second layer');
+  // The pile is the same for every participant.
+  const e2 = new VBBTEngine({ testedHand: 'right', mode: '3d' });
+  assert.deepEqual(e.blocks.map((b) => [b.x, b.y, b.row]), e2.blocks.map((b) => [b.x, b.y, b.row]));
+  assert.ok(rowZ(BOX.rows - 1) + S <= BOX.depth - BOX.wall + 1e-9, 'rows fit inside the box depth');
+});
+
+test('3D: grasp takes the top block, front-most row on a tie', () => {
+  const e = new VBBTEngine({ testedHand: 'right', mode: '3d' });
+  const top = e.blocks.filter((b) => b.y === S);
+  const col = top[0].x;
+  const sameCol = top.filter((b) => b.x === col).sort((a, b) => a.row - b.row);
+  const c = e.grabCandidate(col + S / 2, S + S / 2);
+  assert.equal(c.id, sameCol[0].id);
+});
+
+test('3D: score equals transfers; blocks spread over depth rows; 150 can be moved', () => {
+  const sim = makeSim({ mode: '3d', duration: 10000 });
+  for (let i = 0; i < 160; i++) {
+    if (!topBlock(sim.e, 'right')) break;
+    carry3d(sim, 'right', targetX(i * 7));
+    assert.equal(sim.e.score(), sim.e.c.transfers);
+    assert.equal(sim.e.totalBlocks(), 150);
+  }
+  assert.equal(sim.e.score(), 150);
+  const rows = new Set(sim.e.blocks.map((b) => b.row));
+  assert.equal(rows.size, BOX.rows, 'target pile uses all depth rows');
+  const maxY = Math.max(...sim.e.blocks.map((b) => b.y));
+  assert.ok(maxY <= 2 * S + 1e-9, `blocks are spread, not stacked in towers (max y ${maxY})`);
+});
+
+test('3D: no tunnelling through the partition; returns reduce the score', () => {
+  const sim = makeSim({ mode: '3d' });
+  const b = topBlock(sim.e, 'right');
+  sim.go(b.x + S / 2, b.y + S / 2, false, 5);
+  sim.go(b.x + S / 2, b.y + S / 2, true, 2);
+  const held = sim.e.held;
+  sim.x = 5; sim.y = 4; sim.step();
+  sim.go(3, 4, true, 60);
+  assert.ok(held.x >= GEOM.partitionX1 - 1e-9);
+  sim.go(3, 4, false, 2); sim.wait(20);
+  carry3d(sim, 'right', targetX(0));
+  carry3d(sim, 'right', targetX(4));
+  carry3d(sim, 'left', sourceX(5));
+  const s = sim.e.summary();
+  assert.equal(s.score, 1);
+  assert.equal(s.returns, 1);
 });

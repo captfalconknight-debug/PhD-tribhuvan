@@ -18,15 +18,16 @@
 /** Standard Box and Block Test dimensions (cm) and simulation constants. */
 export const BOX = Object.freeze({
   width: 53.7,              // outer box length (left–right)
-  depth: 25.4,              // not used in the 2D front view; kept for documentation
+  depth: 25.4,              // front-to-back; used by the 3D view only
   height: 8.5,              // height of the box walls
   wall: 0.8,                // wall thickness (simulation assumption)
   partitionHeight: 15.2,    // partition top, measured from the box floor
   partitionThickness: 1.0,  // simulation assumption
   block: 2.5,               // block edge length
   totalBlocks: 150,
-  cols: 10,                 // visible columns per compartment
-  layers: 3,                // visible layers per compartment
+  cols: 10,                 // columns of blocks per compartment (left-right)
+  layers: 3,                // 2D view: layers drawn per compartment
+  rows: 9,                  // 3D view: rows of blocks per compartment (front-back)
 });
 
 /** Default simulation parameters (can be overridden per engine). */
@@ -60,6 +61,26 @@ export function gridLeft(side) {
   return x0 + ((x1 - x0) - BOX.cols * S) / 2;
 }
 
+/**
+ * 3D view: depth (z) of the front face of a block in a given row.
+ * z = 0 at the outer front edge of the box, increasing away from the viewer.
+ * Inner depth 25.4 - 2 x 0.8 = 23.8 cm holds 9 rows of 2.5 cm, centred.
+ */
+export const Z_FRONT = BOX.wall + ((BOX.depth - 2 * BOX.wall) - BOX.rows * S) / 2;
+export function rowZ(row) { return Z_FRONT + row * S; }
+
+/** Small deterministic random generator (mulberry32) so every participant gets the same pile. */
+function seededRandom(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /** Which compartment a block belongs to, judged by the x of its centre. */
 export function sideOfX(centreX) {
   return centreX > GEOM.partitionMid ? 'right' : 'left';
@@ -91,9 +112,13 @@ export class VBBTEngine {
    * @param {object} opts
    * @param {'left'|'right'} opts.testedHand  hand being tested; its side is the source compartment
    * @param {number} [opts.duration]          trial length in seconds (60 test / 15 practice)
+   * @param {'2d'|'3d'} [opts.mode]           '2d' = front view with 3 visible layers and a hidden
+   *                                           reserve; '3d' = all 150 blocks in a real pile, 9 rows deep
    */
   constructor(opts = {}) {
     this.p = { ...DEFAULTS, ...opts };
+    this.mode = opts.mode === '3d' ? '3d' : '2d';
+    this.rows = this.mode === '3d' ? BOX.rows : 1;
     this.testedHand = opts.testedHand === 'left' ? 'left' : 'right';
     this.sourceSide = this.testedHand;                          // pick up on the tested-hand side
     this.targetSide = this.sourceSide === 'left' ? 'right' : 'left';
@@ -103,9 +128,22 @@ export class VBBTEngine {
     this.reserve = BOX.totalBlocks; // hidden blocks "deeper" in the source pile
     this.targetHidden = 0;          // blocks folded out of view in the target pile (still scored)
 
-    // Fill the visible source pile: 3 layers x 10 columns.
-    for (let layer = 0; layer < BOX.layers; layer++) {
-      for (let col = 0; col < BOX.cols; col++) this.spawn(col, layer, 'rest');
+    if (this.mode === '3d') {
+      // 3D: all 150 blocks are visible. Bottom layer full (10 columns x 9 rows = 90);
+      // the other 60 are on top of randomly chosen (but always the same) positions.
+      for (let row = 0; row < BOX.rows; row++) {
+        for (let col = 0; col < BOX.cols; col++) this.spawn(col, 0, 'rest', row);
+      }
+      const rnd = seededRandom(150);
+      const slots = [];
+      for (let row = 0; row < BOX.rows; row++) for (let col = 0; col < BOX.cols; col++) slots.push([col, row]);
+      for (let i = slots.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [slots[i], slots[j]] = [slots[j], slots[i]]; }
+      for (const [col, row] of slots.slice(0, BOX.totalBlocks - BOX.cols * BOX.rows)) this.spawn(col, 1, 'rest', row);
+    } else {
+      // 2D: fill the visible source pile, 3 layers x 10 columns.
+      for (let layer = 0; layer < BOX.layers; layer++) {
+        for (let col = 0; col < BOX.cols; col++) this.spawn(col, layer, 'rest');
+      }
     }
 
     this.t = 0;
@@ -134,11 +172,12 @@ export class VBBTEngine {
   // ---------------------------------------------------------------------------
 
   /** Move one block from the hidden reserve into a grid slot of the source pile. */
-  spawn(col, layer, state = 'fall') {
+  spawn(col, layer, state = 'fall', row = 0) {
     const b = {
       id: this.nextId++,
       x: gridLeft(this.sourceSide) + col * S,
       y: layer * S,
+      row,            // depth row (always 0 in the 2D view)
       vy: 0,
       state,          // 'fall' = settles onto whatever is below on the next physics step
       dir: 0,
@@ -156,18 +195,51 @@ export class VBBTEngine {
 
   /** Is there a block lying directly on top of b? */
   isCovered(b) {
-    return this.blocks.some((o) => o !== b && o.state !== 'held' &&
+    return this.blocks.some((o) => o !== b && o.state !== 'held' && o.row === b.row &&
       Math.abs(o.y - (b.y + S)) < 0.01 && overlap1D(o.x, o.x + S, b.x, b.x + S));
   }
 
-  /** Nearest uncovered resting block whose centre is within the grab radius of (x, y). */
+  /**
+   * Nearest uncovered resting block whose centre is within the grab radius of (x, y).
+   * Distance is measured in the left-right / up-down plane that the hand controls.
+   * 3D view: blocks at the same left-right position and height in different depth
+   * rows are equally near; the one closest to the front is taken.
+   */
   grabCandidate(x = this.cursor?.x, y = this.cursor?.y) {
     if (x == null || this.held) return null;
-    let best = null; let bestD = this.p.grabRadius;
+    let best = null; let bestD = Infinity;
     for (const b of this.blocks) {
       if (b.state !== 'rest') continue;
       const d = Math.hypot(b.x + S / 2 - x, b.y + S / 2 - y);
-      if (d <= bestD && !this.isCovered(b)) { best = b; bestD = d; }
+      if (d > this.p.grabRadius + EPS) continue;
+      const key = d + b.row * 1e-4;            // tie-break: front-most row
+      if (key < bestD && !this.isCovered(b)) { best = b; bestD = key; }
+    }
+    return best;
+  }
+
+  /** Height of the highest block under a block-wide footprint at x in a given row. */
+  stackTop(x, row, except = null) {
+    let top = 0;
+    for (const o of this.blocks) {
+      if (o === except || o.state === 'held' || o.row !== row) continue;
+      if (overlap1D(x, x + S, o.x, o.x + S)) top = Math.max(top, o.y + S);
+    }
+    return top;
+  }
+
+  /**
+   * 3D view: the depth row a block at x will drop into = the row with the lowest
+   * stack at that position (ties: the row nearest its current row, then the front).
+   * This automatic depth placement replaces reaching forwards/backwards, which a
+   * single webcam cannot measure reliably. 2D view: always row 0.
+   */
+  landingRow(b) {
+    if (this.rows === 1) return 0;
+    let best = b.row; let bestKey = Infinity;
+    for (let r = 0; r < this.rows; r++) {
+      const key = this.stackTop(b.x, r, b) * 1000 + Math.abs(r - b.row) * 10 + r * 0.01;
+      if (key < bestKey) { bestKey = key; best = r; }
     }
     return best;
   }
@@ -297,6 +369,9 @@ export class VBBTEngine {
       this.trackClearance(b);
     }
 
+    // 3D: once lifted above the box walls, the block moves to the depth row it will land in.
+    if (this.rows > 1 && b.y >= BOX.height) b.row = this.landingRow(b);
+
     // Kinematics of the carry (block centre path)
     const c = this.carry;
     c.path += Math.hypot(b.x - x0, b.y - y0);
@@ -326,12 +401,14 @@ export class VBBTEngine {
     b.vy = 0;
     this.held = null;
 
+    // 3D: choose the depth row it lands in.
+    b.row = this.landingRow(b);
     // If released overlapping other blocks, it settles on top of them.
     let moved = true;
     while (moved) {
       moved = false;
       for (const o of this.blocks) {
-        if (o !== b && o.state !== 'held' && rectsOverlap(b.x, b.y, o.x, o.y)) { b.y = o.y + S; moved = true; }
+        if (o !== b && o.state !== 'held' && o.row === b.row && rectsOverlap(b.x, b.y, o.x, o.y)) { b.y = o.y + S; moved = true; }
       }
     }
 
@@ -400,7 +477,7 @@ export class VBBTEngine {
   supportBelow(b, yPrev) {
     let best = { y: 0, partition: false };
     for (const o of this.blocks) {
-      if (o === b || o.state === 'held') continue;
+      if (o === b || o.state === 'held' || o.row !== b.row) continue;
       const top = o.y + S;
       if (top <= yPrev + EPS && top > best.y && overlap1D(b.x, b.x + S, o.x, o.x + S)) best = { y: top, partition: false };
     }
@@ -418,6 +495,7 @@ export class VBBTEngine {
    *   - source side: returned to the hidden reserve.
    */
   onRest(b) {
+    if (this.mode === '3d') return;              // 3D: everything stays visible
     if (b.y < BOX.layers * S - 0.01) return;
     this.removeBlock(b);
     if (this.sideOf(b) === this.targetSide) {
@@ -438,8 +516,8 @@ export class VBBTEngine {
     for (let layer = 0; layer < BOX.layers; layer++) {
       for (let col = 0; col < BOX.cols; col++) {
         const x = left + col * S; const y = layer * S;
-        const free = !this.blocks.some((o) => rectsOverlap(x, y, o.x, o.y));
-        const supported = layer === 0 || this.blocks.some((o) => o.state === 'rest' &&
+        const free = !this.blocks.some((o) => o.row === 0 && rectsOverlap(x, y, o.x, o.y));
+        const supported = layer === 0 || this.blocks.some((o) => o.state === 'rest' && o.row === 0 &&
           Math.abs(o.y + S - y) < 0.01 && overlap1D(x, x + S, o.x, o.x + S));
         if (free && supported) { this.spawn(col, layer); return; }  // one block per frame
       }

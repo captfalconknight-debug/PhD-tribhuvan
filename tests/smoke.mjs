@@ -9,6 +9,7 @@
  * Also checks that the webcam pipeline loads MediaPipe from the local vendor/
  * folder using Chromium's fake camera (no real hand, so no tracking expected).
  *
+ * Set VBBT_VIEW=2d to test the 2D view (default 3d).
  * Usage:  node tests/smoke.mjs [path-to-html | https://live-site/]   (default: index.html)
  */
 import http from 'node:http';
@@ -52,6 +53,9 @@ try {
   await page.selectOption('#sex', 'Female');
   await page.selectOption('#dominant', 'right');
   await page.selectOption('#device', 'mouse');
+  const VIEW = process.env.VBBT_VIEW || '3d';
+  await page.selectOption('#view', VIEW);
+  console.log('View:', VIEW);
   await page.click('#connect');
 
   // Practice trial first (must NOT be saved).
@@ -66,7 +70,8 @@ try {
   // world (cm) -> page pixels using the app's renderer
   const toPage = async (x, y) => page.evaluate(([x, y]) => {
     const r = window.vbbt.renderer; const c = r.canvas.getBoundingClientRect();
-    return [c.left + r.px(x) / r.canvas.width * c.width, c.top + r.py(y) / r.canvas.height * c.height];
+    const [sx, sy] = r.toScreen(x, y);
+    return [c.left + sx / r.canvas.width * c.width, c.top + sy / r.canvas.height * c.height];
   }, [x, y]);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 
