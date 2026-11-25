@@ -62,7 +62,7 @@ export class Renderer3D {
     this.dpr = dpr;
     // Projected extent of the region that must be visible (box + lifting space + labels).
     const pts = [];
-    for (const x of [-1, W + 1]) for (const y of [-1.5, 28]) for (const z of [-2, D]) pts.push({ x, y, z });
+    for (const x of [-1, W + 1]) for (const y of [-4, 28]) for (const z of [-2, D]) pts.push({ x, y, z });
     let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity;
     for (const p of pts) {
       const c = this.cam(p);

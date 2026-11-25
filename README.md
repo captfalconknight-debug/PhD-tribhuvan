@@ -32,7 +32,7 @@ node scripts/build-single.js
 ## 2. Running a session (step by step)
 
 1. **Participant form:** enter the ID (a code such as P001, never a name), age, sex, dominant hand and tested hand.
-2. **Input:** choose *Laptop webcam* and press **Connect**. Allow the camera when the browser asks. The first time, loading takes up to a minute.
+2. **Input:** choose *Camera* and press **Connect**. Allow the camera when the browser asks. The first time, loading takes up to a minute.
 3. **Camera check & calibration:** press it and follow the four on-screen steps (camera, open hand, pinch, reach). Do this for **each participant and each hand**. Changing the participant ID or the tested hand clears the calibration.
 4. **View:** *3D view* (default) shows the box in perspective with all 150 blocks. *2D front view* is the earlier flat version. Pick one for your study and keep it for everyone.
 5. **Practice:** tick *Practice trial* and press **Start**. It lasts 15 s and is not saved.
@@ -61,13 +61,24 @@ node scripts/build-single.js
 7. **Dim light can lower the frame rate by itself:** many webcams lengthen the exposure in poor light and deliver only about 15 frames per second, however fast the laptop is. If the status line shows a low processing time (e.g. under 25 ms) but the frame rate is still low, add light in front of the participant.
 8. Check the result: the low-FPS message shows the hand-tracking time per frame. Above about 40 ms means the laptop itself is too slow for 25 fps. Use a faster laptop for data collection, and record the device (it is saved with each trial).
 
-### Using a phone as the camera
+### Using the app on an Android phone (or tablet)
+The whole test can run on the phone itself, using its **front camera**.
+
+1. Open **https://captfalconknight-debug.github.io/PhD-tribhuvan/** in **Chrome** on the phone.
+2. **Install it like an app (optional):** Chrome menu ⋮ → **Add to Home screen** (or **Install app**). A "VBBT" icon appears; it opens without the browser bars and works offline after the first visit.
+3. Fill in the form with the phone upright (portrait), choose *Camera*, press **Connect** and allow the camera.
+4. **Put the phone on a stand, sideways (landscape), at chest height, 40–60 cm away,** with the screen and front camera facing the participant. During the camera check and trials the app switches to full screen with only the box, the score bar and a **Stop** button. If the phone is upright, it asks for it to be turned sideways.
+5. The screen stays on during a trial. Plug the phone in for long sessions: continuous camera use warms the phone and drains the battery.
+
+> A phone is a **different measurement device** from a laptop: the screen is smaller and the camera different. The device type, screen size and browser are saved with every trial (`setup.formFactor`, `setup.screen`, `setup.userAgent`). Don't pool phone and laptop scores without an agreement study; a phone is best suited to home practice and therapy (Paper 2).
+
+### Using a phone as the camera for a laptop
 The phone only supplies the picture; hand tracking still runs on the laptop.
 
 1. **Connect the phone as a webcam.** Use one of these:
    - **Android + Windows 11:** Settings → Bluetooth & devices → *Mobile devices* → turn on *Allow this PC to access your mobile devices*, link the phone, and turn on its camera for "connected camera". No extra app is needed.
    - **Any Android or iPhone:** a webcam app with a Windows driver, for example *Camo*, *DroidCam* or *Iriun Webcam* (install it on both the phone and the laptop). **Use a USB cable** if the app allows it: it gives less delay and a steadier frame rate than Wi-Fi.
-2. In the VBBT, choose *Laptop webcam* and press **Connect** once. Then pick the phone in the **Camera** list. The app reconnects with it.
+2. In the VBBT, choose *Camera* and press **Connect** once. Then pick the phone in the **Camera** list. The app reconnects with it.
 3. **Check the mirroring.** In the small preview, raise your **right** hand. It must appear on the **right** side, like a mirror. If it appears on the left, tick **Camera image is already mirrored** (some phone apps mirror the picture themselves). If the app has its own mirror setting, you can switch that off instead.
 4. Put the phone on a **stand at chest height**, in landscape orientation, 40–60 cm from the hand, and keep it on the charger.
 5. Run **Camera check & calibration** again (changing the camera clears the calibration).
@@ -133,6 +144,7 @@ The smoke test needs Playwright (`npm i -D playwright && npx playwright install 
 | `storage.js` | Local storage, CSV/JSON export |
 | `config.js` | **Settings you may edit:** consent text, durations, FPS warning level |
 | `sw.js` | Offline cache |
+| `manifest.webmanifest`, `icons/` | "Add to Home screen" app name and icons |
 | `vendor/mediapipe/` | Bundled MediaPipe 0.10.35 and the hand model (Apache-2.0) |
 | `tests/` | Unit tests and the browser smoke test |
 | `scripts/build-single.js` | Builds `dist/vbbt.html` |

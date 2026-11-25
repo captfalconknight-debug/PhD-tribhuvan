@@ -273,7 +273,45 @@ async function startTrial() {
   ui.stage.scrollIntoView({ block: 'center' });
 }
 
+// ---------------------------------------------------------------------------
+// Phones and small screens: focus mode, fullscreen, landscape, screen kept awake
+// ---------------------------------------------------------------------------
+const smallScreen = () => matchMedia('(max-width: 900px), (max-height: 600px)').matches;
+let wakeLock = null;
+
+async function setFocus(on) {
+  const focus = on && smallScreen();
+  document.body.classList.toggle('focus', focus);
+  renderer.resize();
+  if (focus) {
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      }
+      await screen.orientation?.lock?.('landscape');
+    } catch { /* not allowed on this device/browser: the rotate hint is shown instead */ }
+  } else if (!on && document.fullscreenElement) {
+    try { await document.exitFullscreen(); } catch { /* ignore */ }
+  }
+  // Keep the screen on during a trial or camera check (phones dim after ~30 s).
+  try {
+    if (on && 'wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen');
+    if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch { wakeLock = null; }
+  setTimeout(() => renderer.resize(), 300);   // after fullscreen/rotation settle
+}
+
+/** Rough device type, saved with each trial. */
+function formFactor() {
+  const s = Math.min(screen.width, screen.height);
+  const touch = navigator.maxTouchPoints > 0;
+  if (touch && s < 500) return 'phone';
+  if (touch && s < 900) return 'tablet';
+  return 'laptop/desktop';
+}
+
 function setRunning(on) {
+  setFocus(on);
   fieldsets.forEach((f) => { f.disabled = on; });
   ui.start.disabled = on;
   ui.practice.disabled = on;
@@ -326,6 +364,7 @@ function finishTrial() {
       handednessInverted: cam ? state.input.invert : null,
       handSelection: cam ? (state.input.allowSingle ? 'label, or the only visible hand' : 'label (checked)') : null,
       screen: `${screen.width}x${screen.height}@${window.devicePixelRatio || 1}`,
+      formFactor: formFactor(),
       userAgent: navigator.userAgent,
     },
   };
@@ -539,6 +578,7 @@ listCameras();
 ui.setupBtn.addEventListener('click', runSetup);
 ui.start.addEventListener('click', startTrial);
 ui.abort.addEventListener('click', () => abortTrial());
+$('stopBtn').addEventListener('click', () => abortTrial());
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') abortTrial(); });
 
 ui.reach.addEventListener('input', () => { ui.reachOut.textContent = ui.reach.value + '%'; });

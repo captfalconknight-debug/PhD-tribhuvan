@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e2a52">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <title>Virtual Box and Block Test</title>
   <meta name="description" content="Virtual Box and Block Test using laptop webcam hand tracking (research prototype).">
   <link rel="stylesheet" href="styles.css">
@@ -52,7 +56,7 @@
         <legend>2. Hand tracking</legend>
         <label>Input
           <select id="device">
-            <option value="camera">Laptop webcam</option>
+            <option value="camera">Camera (laptop webcam or phone camera)</option>
             <option value="mouse">Mouse (simulation)</option>
           </select>
         </label>
@@ -105,6 +109,8 @@
       <div class="stage">
         <canvas id="stage" aria-label="Box and Block Test scene"></canvas>
         <div id="overlay" class="overlay" hidden></div>
+        <button id="stopBtn" type="button" class="stop-float">Stop</button>
+        <div class="rotate-hint">Please turn your phone sideways ⟲</div>
       </div>
 
       <section id="results" class="card" hidden>

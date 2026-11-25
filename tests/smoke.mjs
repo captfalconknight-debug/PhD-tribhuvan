@@ -9,7 +9,7 @@
  * Also checks that the webcam pipeline loads MediaPipe from the local vendor/
  * folder using Chromium's fake camera (no real hand, so no tracking expected).
  *
- * Set VBBT_VIEW=2d to test the 2D view (default 3d).
+ * Set VBBT_VIEW=2d to test the 2D view (default 3d); VBBT_DEVICE=phone to emulate a phone.
  * Usage:  node tests/smoke.mjs [path-to-html | https://live-site/]   (default: index.html)
  */
 import http from 'node:http';
@@ -41,7 +41,14 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 const fail = (m) => { console.error('FAIL:', m); process.exitCode = 1; };
 const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
 try {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, acceptDownloads: true, permissions: ['camera'] });
+  // VBBT_DEVICE=phone emulates an Android phone held sideways (Pixel 7, landscape).
+  const { devices } = require('playwright');
+  const PHONE = process.env.VBBT_DEVICE === 'phone';
+  const ctx = await browser.newContext({
+    ...(PHONE ? devices['Pixel 7 landscape'] : { viewport: { width: 1400, height: 1000 } }),
+    acceptDownloads: true, permissions: ['camera'],
+  });
+  if (PHONE) console.log('Device: Pixel 7 (landscape)');
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -123,7 +130,16 @@ try {
   await page.waitForTimeout(300);
   { const bb = await stage.boundingBox(); await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2, { steps: 2 }); }
   const t0 = Date.now();
+  if (PHONE) {
+    await page.waitForFunction(() => window.vbbt.state.phase === 'running', null, { timeout: 15000 });
+    if (!(await page.evaluate(() => document.body.classList.contains('focus')))) fail('phone focus mode not active');
+    const hidden = await page.evaluate(() => getComputedStyle(document.querySelector('.panel')).display === 'none');
+    if (!hidden) fail('side panel should be hidden in focus mode');
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: path.join(root, 'test-results', 'phone-trial.png') }).catch(() => {});
+  }
   await runUntilDone();
+  if (PHONE && (await page.evaluate(() => document.body.classList.contains('focus')))) fail('focus mode should end after the trial');
   const secs = (Date.now() - t0) / 1000;
   const score = +(await page.textContent('#resScore'));
   console.log(`Test trial finished in ${secs.toFixed(1)} s, score ${score}`);

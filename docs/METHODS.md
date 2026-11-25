@@ -1,6 +1,6 @@
 # Virtual Box and Block Test (VBBT): rules and metric definitions
 
-This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.5.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
+This document describes exactly what the software does, in wording that can be adapted for the methods section of a paper or thesis. Values refer to app version 1.6.0. All numbers here are taken directly from the source code (`engine.js`, `inputs/handmath.js`, `app.js`, `setup.js`, `filters.js`, `config.js`).
 
 ---
 
@@ -37,6 +37,8 @@ The app has two display modes, chosen before a trial and recorded with it (`view
 - In mouse-simulation mode the pointer moves in the vertical plane through the centre of the front row.
 
 **2D front view (`viewMode = 2d`).** A flat front view of the box. Because a front view cannot show depth, only three layers × 10 columns are drawn per compartment, and the depth of the pile is simulated with a hidden reserve (see "Depth simulation" in Section 4).
+
+**Phones and tablets.** The same web app runs in Chrome on Android phones and tablets, using the front camera. On small screens (width ≤ 900 px or height ≤ 600 px), the app switches to a full-screen *focus mode* during the camera check and trials. It shows only the box, a compact score/time/tracking bar and a Stop button, asks for landscape orientation, and keeps the screen awake. Laptop screens keep the standard layout. The device type (`setup.formFactor`: phone, tablet or laptop/desktop, from touch support and screen size), screen size and browser are recorded with every trial.
 
 > The two modes are different versions of the instrument. Choose one before data collection and use it for all participants. Do not pool scores across modes without an agreement analysis.
 

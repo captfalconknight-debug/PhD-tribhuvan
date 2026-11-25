@@ -42,7 +42,7 @@ GitHub Pages hosts the app for free over **https**, which the camera needs. Ever
 
 ### Step 5. Test it
 1. Open the address in **Chrome** or **Edge** on a laptop.
-2. Choose *Laptop webcam* and press **Connect**. Allow the camera.
+2. Choose *Camera* and press **Connect**. Allow the camera.
 3. Work through the **hardware test checklist** in `README.md` on each laptop model.
 
 ---

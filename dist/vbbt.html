@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e2a52">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <title>Virtual Box and Block Test</title>
   <meta name="description" content="Virtual Box and Block Test using laptop webcam hand tracking (research prototype).">
   <style>
@@ -32,6 +36,34 @@ body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-se
 
 .layout { display: grid; grid-template-columns: minmax(300px, 360px) 1fr; gap: 1rem; padding: 1rem; align-items: start; }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; padding: 0.5rem 16px; } }
+
+/* ---------- Focus mode: phones and small screens during a trial or camera check ----------
+   The box fills the screen; the forms, header and tables are hidden. Laptops keep the normal layout. */
+.stop-float, .rotate-hint { display: none; }
+body.focus { overflow: hidden; }
+body.focus .topbar, body.focus .panel, body.focus .main > .card { display: none !important; }
+body.focus .layout { display: block; padding: 0; }
+body.focus .main { height: 100dvh; display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+body.focus .hud { margin: 4px; gap: 4px; }
+body.focus .hud-item { padding: 2px 10px; flex-direction: row; align-items: baseline; gap: 8px; }
+body.focus .hud-label { font-size: 0.8rem; }
+body.focus .hud-value { font-size: 1.5rem; }
+body.focus .hud-value.track { font-size: 1.1rem; }
+body.focus .stage { flex: 1; aspect-ratio: auto; min-height: 0; margin: 0; border-radius: 0; border: 0; }
+body.focus .stop-float { display: block; position: absolute; right: 8px; bottom: 8px; z-index: 7;
+  background: rgba(255,255,255,0.92); border-color: var(--danger); color: var(--danger); min-height: 2.6rem; }
+body.focus .overlay .msg { font-size: 1.25rem; padding: 0.6rem 1rem; }
+body.focus .overlay .count { font-size: 6rem; }
+body.focus .setup-box { padding: 0.4rem 0.8rem; }
+body.focus .setup-title { font-size: 1.1rem; }
+body.focus .setup-line { font-size: 0.95rem; }
+@media (orientation: portrait) {
+  body.focus .rotate-hint { display: flex; position: fixed; inset: 0; z-index: 6; align-items: center; justify-content: center;
+    text-align: center; padding: 1rem; background: rgba(14, 42, 82, 0.95); color: #fff; font-size: 1.6rem; font-weight: 800; }
+}
+/* Phones (portrait form filling): slightly smaller base size so the forms fit. */
+@media (max-width: 480px) { :root { font-size: 17px; } .hud-value { font-size: 1.6rem; } }
 
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 1rem 1rem; margin: 0 0 1rem; min-width: 0; }
 fieldset.card { display: flex; flex-direction: column; gap: 0.55rem; }
@@ -162,7 +194,7 @@ dialog h2 { margin-top: 0; }
         <legend>2. Hand tracking</legend>
         <label>Input
           <select id="device">
-            <option value="camera">Laptop webcam</option>
+            <option value="camera">Camera (laptop webcam or phone camera)</option>
             <option value="mouse">Mouse (simulation)</option>
           </select>
         </label>
@@ -215,6 +247,8 @@ dialog h2 { margin-top: 0; }
       <div class="stage">
         <canvas id="stage" aria-label="Box and Block Test scene"></canvas>
         <div id="overlay" class="overlay" hidden></div>
+        <button id="stopBtn" type="button" class="stop-float">Stop</button>
+        <div class="rotate-hint">Please turn your phone sideways ⟲</div>
       </div>
 
       <section id="results" class="card" hidden>
@@ -1083,7 +1117,7 @@ class Renderer3D {
     this.dpr = dpr;
     // Projected extent of the region that must be visible (box + lifting space + labels).
     const pts = [];
-    for (const x of [-1, W + 1]) for (const y of [-1.5, 28]) for (const z of [-2, D]) pts.push({ x, y, z });
+    for (const x of [-1, W + 1]) for (const y of [-4, 28]) for (const z of [-2, D]) pts.push({ x, y, z });
     let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity;
     for (const p of pts) {
       const c = this.cam(p);
@@ -1520,7 +1554,7 @@ const __m8 = (() => {
  * config.js — settings the researcher may edit without touching the rest of the code.
  */
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 /** Trial durations in seconds. */
 const TEST_DURATION = 60;
@@ -2476,7 +2510,45 @@ async function startTrial() {
   ui.stage.scrollIntoView({ block: 'center' });
 }
 
+// ---------------------------------------------------------------------------
+// Phones and small screens: focus mode, fullscreen, landscape, screen kept awake
+// ---------------------------------------------------------------------------
+const smallScreen = () => matchMedia('(max-width: 900px), (max-height: 600px)').matches;
+let wakeLock = null;
+
+async function setFocus(on) {
+  const focus = on && smallScreen();
+  document.body.classList.toggle('focus', focus);
+  renderer.resize();
+  if (focus) {
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      }
+      await screen.orientation?.lock?.('landscape');
+    } catch { /* not allowed on this device/browser: the rotate hint is shown instead */ }
+  } else if (!on && document.fullscreenElement) {
+    try { await document.exitFullscreen(); } catch { /* ignore */ }
+  }
+  // Keep the screen on during a trial or camera check (phones dim after ~30 s).
+  try {
+    if (on && 'wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen');
+    if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch { wakeLock = null; }
+  setTimeout(() => renderer.resize(), 300);   // after fullscreen/rotation settle
+}
+
+/** Rough device type, saved with each trial. */
+function formFactor() {
+  const s = Math.min(screen.width, screen.height);
+  const touch = navigator.maxTouchPoints > 0;
+  if (touch && s < 500) return 'phone';
+  if (touch && s < 900) return 'tablet';
+  return 'laptop/desktop';
+}
+
 function setRunning(on) {
+  setFocus(on);
   fieldsets.forEach((f) => { f.disabled = on; });
   ui.start.disabled = on;
   ui.practice.disabled = on;
@@ -2529,6 +2601,7 @@ function finishTrial() {
       handednessInverted: cam ? state.input.invert : null,
       handSelection: cam ? (state.input.allowSingle ? 'label, or the only visible hand' : 'label (checked)') : null,
       screen: `${screen.width}x${screen.height}@${window.devicePixelRatio || 1}`,
+      formFactor: formFactor(),
       userAgent: navigator.userAgent,
     },
   };
@@ -2742,6 +2815,7 @@ listCameras();
 ui.setupBtn.addEventListener('click', runSetup);
 ui.start.addEventListener('click', startTrial);
 ui.abort.addEventListener('click', () => abortTrial());
+$('stopBtn').addEventListener('click', () => abortTrial());
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') abortTrial(); });
 
 ui.reach.addEventListener('input', () => { ui.reachOut.textContent = ui.reach.value + '%'; });

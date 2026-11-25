@@ -25,6 +25,34 @@ body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-se
 .layout { display: grid; grid-template-columns: minmax(300px, 360px) 1fr; gap: 1rem; padding: 1rem; align-items: start; }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; padding: 0.5rem 16px; } }
 
+/* ---------- Focus mode: phones and small screens during a trial or camera check ----------
+   The box fills the screen; the forms, header and tables are hidden. Laptops keep the normal layout. */
+.stop-float, .rotate-hint { display: none; }
+body.focus { overflow: hidden; }
+body.focus .topbar, body.focus .panel, body.focus .main > .card { display: none !important; }
+body.focus .layout { display: block; padding: 0; }
+body.focus .main { height: 100dvh; display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+body.focus .hud { margin: 4px; gap: 4px; }
+body.focus .hud-item { padding: 2px 10px; flex-direction: row; align-items: baseline; gap: 8px; }
+body.focus .hud-label { font-size: 0.8rem; }
+body.focus .hud-value { font-size: 1.5rem; }
+body.focus .hud-value.track { font-size: 1.1rem; }
+body.focus .stage { flex: 1; aspect-ratio: auto; min-height: 0; margin: 0; border-radius: 0; border: 0; }
+body.focus .stop-float { display: block; position: absolute; right: 8px; bottom: 8px; z-index: 7;
+  background: rgba(255,255,255,0.92); border-color: var(--danger); color: var(--danger); min-height: 2.6rem; }
+body.focus .overlay .msg { font-size: 1.25rem; padding: 0.6rem 1rem; }
+body.focus .overlay .count { font-size: 6rem; }
+body.focus .setup-box { padding: 0.4rem 0.8rem; }
+body.focus .setup-title { font-size: 1.1rem; }
+body.focus .setup-line { font-size: 0.95rem; }
+@media (orientation: portrait) {
+  body.focus .rotate-hint { display: flex; position: fixed; inset: 0; z-index: 6; align-items: center; justify-content: center;
+    text-align: center; padding: 1rem; background: rgba(14, 42, 82, 0.95); color: #fff; font-size: 1.6rem; font-weight: 800; }
+}
+/* Phones (portrait form filling): slightly smaller base size so the forms fit. */
+@media (max-width: 480px) { :root { font-size: 17px; } .hud-value { font-size: 1.6rem; } }
+
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 1rem 1rem; margin: 0 0 1rem; min-width: 0; }
 fieldset.card { display: flex; flex-direction: column; gap: 0.55rem; }
 legend, .card h2 { font-weight: 800; font-size: 1.1rem; padding: 0 0.3rem; margin: 0 0 0.3rem; }
