@@ -3,6 +3,7 @@
  * Reads engine state; never changes it.
  */
 import { BOX, GEOM, DEFAULTS } from './engine.js';
+import { drawHand, drawPickFlash } from './avatar.js';
 
 const S = BOX.block;
 // Visible part of the world, in cm (x right, y up).
@@ -118,35 +119,39 @@ export class Renderer {
       this.rect(b.x, b.y, S, S, COLORS[b.id % COLORS.length], '#1a1a1a', 1.2);
     }
     if (cand) {
-      c.save();
-      this.rect(cand.x - 0.15, cand.y - 0.15, S + 0.3, S + 0.3, 'rgba(0,0,0,0)', '#ff6d00', 4);
-      c.restore();
+      // Block that a pinch would pick: pulsing orange outline
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 120);
+      this.rect(cand.x - 0.2, cand.y - 0.2, S + 0.4, S + 0.4, 'rgba(255,171,0,0.25)', '#ff6d00', 3 + 3 * pulse);
     }
+    const now = performance.now();
+    if (e.held && e.held.id !== this.lastHeldId) this.flash = { t0: now };
+    this.lastHeldId = e.held ? e.held.id : null;
     if (e.held) {
+      // Picked block: snapped between the avatar's fingertips, bright yellow outline
       const b = e.held;
       this.rect(b.x + 0.35, b.y - 0.35, S, S, 'rgba(0,0,0,0.25)');
-      this.rect(b.x, b.y, S, S, COLORS[b.id % COLORS.length], '#000', 2);
+      c.save(); c.shadowColor = '#ffab00'; c.shadowBlur = 14 * this.dpr;
+      this.rect(b.x, b.y, S, S, COLORS[b.id % COLORS.length], '#ffd600', 4);
+      c.restore();
     }
 
-    // Cursor ring: radius = grab radius; filled while pinching
+    // Hand avatar (pinch point = cursor), or a simple ring if no avatar is available
     const cur = o.cursor;
-    if (cur) {
+    if (o.avatar && cur) {
+      const pts = o.avatar.map((p) => [this.px(cur.x + p.x), this.py(cur.y + p.y)]);
+      drawHand(c, pts, this.scale, { present: cur.present, pinch: cur.pinch, dpr: this.dpr });
+    } else if (cur) {
       const R = DEFAULTS.grabRadius * this.scale * 0.6;
       c.beginPath();
       c.arc(this.px(cur.x), this.py(cur.y), R, 0, Math.PI * 2);
       c.lineWidth = 4 * this.dpr;
-      if (cur.present) {
-        c.strokeStyle = '#0d47a1';
-        c.setLineDash([]);
-        if (cur.pinch) { c.fillStyle = 'rgba(13, 71, 161, 0.55)'; c.fill(); }
-      } else {
-        c.strokeStyle = '#9e9e9e';
-        c.setLineDash([6 * this.dpr, 6 * this.dpr]);
-      }
+      c.strokeStyle = cur.present ? '#0d47a1' : '#9e9e9e';
+      if (cur.present && cur.pinch) { c.fillStyle = 'rgba(13, 71, 161, 0.55)'; c.fill(); }
       c.stroke();
-      c.setLineDash([]);
-      c.beginPath(); c.arc(this.px(cur.x), this.py(cur.y), 3 * this.dpr, 0, Math.PI * 2);
-      c.fillStyle = cur.present ? '#0d47a1' : '#9e9e9e'; c.fill();
+    }
+    if (this.flash && e.held) {
+      const t = (now - this.flash.t0) / 450;
+      if (t < 1) drawPickFlash(c, this.px(e.held.x + S / 2), this.py(e.held.y + S / 2), S * this.scale * 0.8, t, this.dpr);
     }
   }
 }

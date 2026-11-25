@@ -9,6 +9,7 @@
  * The hand controls x and y; depth (z) is handled automatically by the engine.
  */
 import { BOX, GEOM, DEFAULTS, rowZ, Z_FRONT } from './engine.js';
+import { drawHand, drawPickFlash } from './avatar.js';
 
 const S = BOX.block;
 const W = BOX.width; const D = BOX.depth; const H = BOX.height; const T = BOX.wall;
@@ -168,13 +169,22 @@ export class Renderer3D {
 
     const drawBlock = ({ b, z }) => {
       const col = COLORS[b.id % COLORS.length];
-      this.cuboid(b.x, b.y, z, b.x + S, b.y + S, z + S, col, { stroke: b === e.held ? '#000' : 'rgba(0,0,0,0.55)' });
-      if (b === cand) {
-        c.save();
-        const pts = [P(b.x, b.y + S, z), P(b.x + S, b.y + S, z), P(b.x + S, b.y + S, z + S), P(b.x, b.y + S, z + S)];
-        this.poly(pts, null, '#ff6d00', 4);
-        this.poly([P(b.x, b.y, z), P(b.x + S, b.y, z), P(b.x + S, b.y + S, z), P(b.x, b.y + S, z)], null, '#ff6d00', 4);
+      if (b === e.held) {
+        // Picked block: bright yellow outline with a glow
+        c.save(); c.shadowColor = '#ffab00'; c.shadowBlur = 14 * this.dpr;
+        this.cuboid(b.x, b.y, z, b.x + S, b.y + S, z + S, col, { stroke: '#ffd600' });
         c.restore();
+        this.cuboid(b.x, b.y, z, b.x + S, b.y + S, z + S, col, { stroke: '#ffd600' });
+        return;
+      }
+      this.cuboid(b.x, b.y, z, b.x + S, b.y + S, z + S, col);
+      if (b === cand) {
+        // Block that a pinch would pick: pulsing orange outline
+        const lw = 3 + 3 * (0.5 + 0.5 * Math.sin(performance.now() / 120));
+        const top = [P(b.x, b.y + S, z), P(b.x + S, b.y + S, z), P(b.x + S, b.y + S, z + S), P(b.x, b.y + S, z + S)];
+        const front = [P(b.x, b.y, z), P(b.x + S, b.y, z), P(b.x + S, b.y + S, z), P(b.x, b.y + S, z)];
+        this.poly(top, 'rgba(255,171,0,0.35)', '#ff6d00', lw);
+        this.poly(front, 'rgba(255,171,0,0.25)', '#ff6d00', lw);
       }
     };
     const high = (it) => it.b.y >= GEOM.partitionTop - 1e-6;
@@ -194,22 +204,30 @@ export class Renderer3D {
     this.text(`${inSource} of ${BOX.totalBlocks} blocks here`, (sx0 + sx1) / 2, -1.5, -2, 1.6, '#263238', '700');
     this.text(`${inTarget} of ${BOX.totalBlocks} blocks here`, (tx0 + tx1) / 2, -1.5, -2, 1.6, '#263238', '700');
 
-    // Cursor: a ring at the depth of the block it would grab (or the held block).
+    // Hand avatar, drawn in the depth plane of the block it would grab (or holds).
     const cur = o.cursor;
+    const now = performance.now();
+    if (e.held && e.held.id !== this.lastHeldId) this.flash = { t0: now };
+    this.lastHeldId = e.held ? e.held.id : null;
     if (cur) {
       const ref = e.held || cand;
       const zc = ref ? this.zOf(ref) + S / 2 : MOUSE_PLANE_Z;
       const [px, py, cz] = this.project(cur.x, cur.y, zc);
-      const Rpx = DEFAULTS.grabRadius * 0.6 * this.f / cz;
-      c.beginPath(); c.arc(px, py, Rpx, 0, Math.PI * 2);
-      c.lineWidth = 4 * this.dpr;
-      if (cur.present) {
-        c.strokeStyle = '#0d47a1';
-        if (cur.pinch) { c.fillStyle = 'rgba(13, 71, 161, 0.55)'; c.fill(); }
-      } else { c.strokeStyle = '#9e9e9e'; c.setLineDash([6 * this.dpr, 6 * this.dpr]); }
-      c.stroke(); c.setLineDash([]);
-      c.beginPath(); c.arc(px, py, 3 * this.dpr, 0, Math.PI * 2);
-      c.fillStyle = cur.present ? '#0d47a1' : '#9e9e9e'; c.fill();
+      const pxPerCm = this.f / cz;
+      if (o.avatar) {
+        const pts = o.avatar.map((p) => { const q = this.project(cur.x + p.x, cur.y + p.y, zc); return [q[0], q[1]]; });
+        drawHand(c, pts, pxPerCm, { present: cur.present, pinch: cur.pinch, dpr: this.dpr });
+      } else {
+        c.beginPath(); c.arc(px, py, DEFAULTS.grabRadius * 0.6 * pxPerCm, 0, Math.PI * 2);
+        c.lineWidth = 4 * this.dpr; c.strokeStyle = cur.present ? '#0d47a1' : '#9e9e9e';
+        if (cur.present && cur.pinch) { c.fillStyle = 'rgba(13, 71, 161, 0.55)'; c.fill(); }
+        c.stroke();
+      }
+      if (this.flash && e.held) {
+        const t = (now - this.flash.t0) / 450;
+        const hb = e.held; const [fx, fy] = this.project(hb.x + S / 2, hb.y + S / 2, this.zOf(hb) + S / 2);
+        if (t < 1) drawPickFlash(c, fx, fy, S * 0.8 * pxPerCm, t, this.dpr);
+      }
     }
   }
 }

@@ -5,9 +5,9 @@
  * MediaPipe files in vendor/ (large, never change): cache first.
  * Bump CACHE when the vendor files change.
  */
-const CACHE = 'vbbt-v3';
+const CACHE = 'vbbt-v4';
 const CORE = [
-  './', './index.html', './styles.css', './app.js', './engine.js', './render.js', './render3d.js', './filters.js',
+  './', './index.html', './styles.css', './app.js', './engine.js', './render.js', './render3d.js', './avatar.js', './filters.js',
   './storage.js', './setup.js', './config.js',
   './inputs/mouse.js', './inputs/camera.js', './inputs/handmath.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',

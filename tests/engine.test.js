@@ -346,3 +346,14 @@ test('grab window: a block reached within 0.3 s of pinching is caught; later is 
   assert.equal(s.successfulGrasps, 1);
   assert.equal(s.missedGrasps, 1);
 });
+
+test('a picked block snaps to the pinch point; the snap is not counted as carry path', () => {
+  const sim = makeSim();
+  const b = topBlock(sim.e, 'right');
+  const cx = b.x + S / 2 + 0.8; const cy = b.y + S / 2 + 0.6;   // pinch slightly off-centre
+  sim.go(cx, cy, false, 5);
+  sim.go(cx, cy, true, 3);
+  assert.equal(sim.e.held?.id, b.id);
+  assert.ok(Math.abs(b.x + S / 2 - cx) < 1e-6 && Math.abs(b.y + S / 2 - cy) < 1e-6, 'block centre at the pinch point');
+  assert.ok(sim.e.carry.path < 1e-9, 'snap not counted');
+});

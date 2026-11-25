@@ -645,9 +645,11 @@ class VBBTEngine {
       blockId: b.id,
       from: this.sideOf(b),
       t0: this.t,
-      // keep the offset between cursor and block centre so the block does not jump
-      offX: cx - this.cursor.x,
-      offY: cy - this.cursor.y,
+      // The block snaps to the pinch point (between the avatar's thumb and index
+      // tips): no offset. The snap itself is not counted as carry movement.
+      offX: 0,
+      offY: 0,
+      snapping: true,
       path: 0,
       minClearance: null,      // smallest gap above the partition top while over it
       peakSpeed: 0,
@@ -684,8 +686,13 @@ class VBBTEngine {
     // 3D: once lifted above the box walls, the block moves to the depth row it will land in.
     if (this.rows > 1 && b.y >= BOX.height) b.row = this.landingRow(b);
 
-    // Kinematics of the carry (block centre path)
+    // Kinematics of the carry (block centre path); the first move is the snap into the hand
     const c = this.carry;
+    if (c.snapping) {
+      c.snapping = false;
+      c.hist = [{ t: this.t, x: b.x + S / 2, y: b.y + S / 2 }];
+      return;
+    }
     c.path += Math.hypot(b.x - x0, b.y - y0);
     const cx = b.x + S / 2; const cy = b.y + S / 2;
     if (skipSpeed) c.hist = [];   // ignore the jump that follows a tracking gap
@@ -893,6 +900,140 @@ class VBBTEngine {
 return { BOX, DEFAULTS, GEOM, gridLeft, Z_FRONT, rowZ, sideOfX, VBBTEngine };
 })();
 
+// ===== avatar.js =====
+const __m3 = (() => {
+/**
+ * avatar.js — semi-transparent hand avatar.
+ *
+ * The avatar is built from the 21 MediaPipe hand landmarks, so every finger
+ * joint follows the participant's hand: fingers bend, open and close as theirs
+ * do. It is drawn so that the PINCH POINT (midway between thumb tip and index
+ * tip) sits exactly on the cursor, which is where blocks are grasped.
+ *
+ * Landmark indices: 0 wrist; thumb 1-4; index 5-8; middle 9-12; ring 13-16; little 17-20.
+ */
+
+const AVATAR_PALM_CM = 7;   // drawn size: wrist to middle-finger knuckle, in box centimetres
+
+const FINGERS = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]];
+const PALM_OUTLINE = [0, 1, 2, 5, 9, 13, 17];
+const FINGER_WIDTH_CM = [1.7, 1.5, 1.55, 1.45, 1.25];   // thumb, index, middle, ring, little
+
+/**
+ * Built-in hand shapes for mouse (simulation) mode: a right hand seen in a
+ * mirror, palm towards the screen. Units: wrist at (0,0), wrist-to-middle-knuckle
+ * length = 1, y pointing DOWN (image convention).
+ */
+const OPEN = [[0, 0], [-0.35, -0.15], [-0.62, -0.35], [-0.82, -0.56], [-0.98, -0.76],
+  [-0.3, -0.95], [-0.35, -1.35], [-0.38, -1.6], [-0.4, -1.85],
+  [0, -1], [0, -1.45], [0, -1.72], [0, -1.98],
+  [0.27, -0.93], [0.3, -1.33], [0.32, -1.57], [0.34, -1.8],
+  [0.5, -0.8], [0.58, -1.1], [0.63, -1.3], [0.67, -1.48]];
+const PINCHED = [[0, 0], [-0.33, -0.17], [-0.58, -0.42], [-0.68, -0.8], [-0.6, -1.15],
+  [-0.3, -0.95], [-0.38, -1.28], [-0.5, -1.33], [-0.58, -1.2],
+  [0, -1], [-0.02, -1.4], [-0.04, -1.62], [-0.05, -1.82],
+  [0.27, -0.93], [0.28, -1.3], [0.29, -1.52], [0.3, -1.72],
+  [0.5, -0.8], [0.56, -1.07], [0.6, -1.25], [0.63, -1.42]];
+
+/**
+ * Template hand for mouse mode. t = 0 open … 1 pinched. Returns 21 offsets
+ * (cm, y up) relative to the pinch point.
+ */
+function templateHand(t, hand = 'right') {
+  const pts = OPEN.map((p, i) => [p[0] + (PINCHED[i][0] - p[0]) * t, p[1] + (PINCHED[i][1] - p[1]) * t]);
+  const mx = (pts[4][0] + pts[8][0]) / 2; const my = (pts[4][1] + pts[8][1]) / 2;
+  const sx = hand === 'left' ? -1 : 1;
+  return pts.map(([x, y]) => ({ x: sx * (x - mx) * AVATAR_PALM_CM, y: -(y - my) * AVATAR_PALM_CM }));
+}
+
+/**
+ * Tracked hand: image landmarks (0..1) -> 21 offsets in cm (y up) relative to
+ * the pinch point, scaled so the palm is AVATAR_PALM_CM long whatever the
+ * distance from the camera. `mx` maps image x to mirrored screen x.
+ */
+function handOffsets(lm, aspect, mx) {
+  const P = lm.map((p) => ({ x: mx(p.x) * aspect, y: p.y }));
+  const palm = Math.hypot(P[0].x - P[9].x, P[0].y - P[9].y) || 1e-3;
+  const k = AVATAR_PALM_CM / palm;
+  const cx = (P[4].x + P[8].x) / 2; const cy = (P[4].y + P[8].y) / 2;
+  return P.map((p) => ({ x: (p.x - cx) * k, y: -(p.y - cy) * k }));
+}
+
+let off = null;   // offscreen canvas: the hand is drawn opaque, then blended once (even transparency)
+
+/**
+ * Draw the avatar.
+ * @param ctx      destination 2D context
+ * @param pts      21 points already in canvas pixels [[x, y], ...]
+ * @param pxPerCm  scale for line widths
+ * @param o        { present, pinch, dpr }
+ */
+function drawHand(ctx, pts, pxPerCm, o) {
+  const W = ctx.canvas.width; const H = ctx.canvas.height;
+  if (!off) off = document.createElement('canvas');
+  if (off.width !== W || off.height !== H) { off.width = W; off.height = H; }
+  const c = off.getContext('2d');
+  c.clearRect(0, 0, W, H);
+  const skin = o.present ? '#f2c4a0' : '#b0bec5';
+  const edge = o.present ? '#8d5b3c' : '#607d8b';
+  c.lineCap = 'round'; c.lineJoin = 'round';
+
+  // Palm
+  c.beginPath();
+  PALM_OUTLINE.forEach((i, n) => (n ? c.lineTo(pts[i][0], pts[i][1]) : c.moveTo(pts[i][0], pts[i][1])));
+  c.closePath();
+  c.fillStyle = skin; c.fill();
+  c.lineWidth = 1.4 * pxPerCm; c.strokeStyle = skin; c.stroke();
+
+  // Fingers: dark outline, then skin on top
+  const finger = (f, width, color) => {
+    c.beginPath();
+    c.moveTo(pts[f[0]][0], pts[f[0]][1]);
+    for (const i of f.slice(1)) c.lineTo(pts[i][0], pts[i][1]);
+    c.lineWidth = width; c.strokeStyle = color; c.stroke();
+  };
+  FINGERS.forEach((f, n) => finger(f, FINGER_WIDTH_CM[n] * pxPerCm + 3 * o.dpr, edge));
+  FINGERS.forEach((f, n) => finger(f, FINGER_WIDTH_CM[n] * pxPerCm, skin));
+
+  // Joints (all fingers) as small dots, so finger bending is easy to see
+  c.fillStyle = edge;
+  for (let i = 1; i < 21; i++) {
+    if (i === 4 || i === 8) continue;
+    c.beginPath(); c.arc(pts[i][0], pts[i][1], 0.22 * pxPerCm, 0, Math.PI * 2); c.fill();
+  }
+
+  ctx.save();
+  ctx.globalAlpha = o.present ? 0.55 : 0.3;
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+
+  // Thumb and index tips: glowing yellow when pinched, white when open (drawn fully opaque)
+  ctx.save();
+  for (const i of [4, 8]) {
+    ctx.beginPath(); ctx.arc(pts[i][0], pts[i][1], 0.55 * pxPerCm, 0, Math.PI * 2);
+    if (o.pinch && o.present) {
+      ctx.fillStyle = '#ffea00'; ctx.shadowColor = '#ffab00'; ctx.shadowBlur = 10 * o.dpr;
+    } else { ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.shadowBlur = 0; }
+    ctx.fill();
+    ctx.shadowBlur = 0; ctx.lineWidth = 2 * o.dpr; ctx.strokeStyle = o.present ? '#5d4037' : '#607d8b'; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Expanding ring shown for a moment when a block is picked up. t = 0..1 */
+function drawPickFlash(ctx, x, y, rPx, t, dpr) {
+  ctx.save();
+  ctx.globalAlpha = 1 - t;
+  ctx.lineWidth = (6 - 4 * t) * dpr;
+  ctx.strokeStyle = '#ffd600';
+  ctx.shadowColor = '#ffab00'; ctx.shadowBlur = 16 * dpr;
+  ctx.beginPath(); ctx.arc(x, y, rPx * (1 + 1.2 * t), 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+return { AVATAR_PALM_CM, templateHand, handOffsets, drawHand, drawPickFlash };
+})();
+
 // ===== render.js =====
 const __m2 = (() => {
 /**
@@ -900,6 +1041,7 @@ const __m2 = (() => {
  * Reads engine state; never changes it.
  */
 const { BOX, GEOM, DEFAULTS } = __m1;
+const { drawHand, drawPickFlash } = __m3;
 
 const S = BOX.block;
 // Visible part of the world, in cm (x right, y up).
@@ -1015,35 +1157,39 @@ class Renderer {
       this.rect(b.x, b.y, S, S, COLORS[b.id % COLORS.length], '#1a1a1a', 1.2);
     }
     if (cand) {
-      c.save();
-      this.rect(cand.x - 0.15, cand.y - 0.15, S + 0.3, S + 0.3, 'rgba(0,0,0,0)', '#ff6d00', 4);
-      c.restore();
+      // Block that a pinch would pick: pulsing orange outline
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 120);
+      this.rect(cand.x - 0.2, cand.y - 0.2, S + 0.4, S + 0.4, 'rgba(255,171,0,0.25)', '#ff6d00', 3 + 3 * pulse);
     }
+    const now = performance.now();
+    if (e.held && e.held.id !== this.lastHeldId) this.flash = { t0: now };
+    this.lastHeldId = e.held ? e.held.id : null;
     if (e.held) {
+      // Picked block: snapped between the avatar's fingertips, bright yellow outline
       const b = e.held;
       this.rect(b.x + 0.35, b.y - 0.35, S, S, 'rgba(0,0,0,0.25)');
-      this.rect(b.x, b.y, S, S, COLORS[b.id % COLORS.length], '#000', 2);
+      c.save(); c.shadowColor = '#ffab00'; c.shadowBlur = 14 * this.dpr;
+      this.rect(b.x, b.y, S, S, COLORS[b.id % COLORS.length], '#ffd600', 4);
+      c.restore();
     }
 
-    // Cursor ring: radius = grab radius; filled while pinching
+    // Hand avatar (pinch point = cursor), or a simple ring if no avatar is available
     const cur = o.cursor;
-    if (cur) {
+    if (o.avatar && cur) {
+      const pts = o.avatar.map((p) => [this.px(cur.x + p.x), this.py(cur.y + p.y)]);
+      drawHand(c, pts, this.scale, { present: cur.present, pinch: cur.pinch, dpr: this.dpr });
+    } else if (cur) {
       const R = DEFAULTS.grabRadius * this.scale * 0.6;
       c.beginPath();
       c.arc(this.px(cur.x), this.py(cur.y), R, 0, Math.PI * 2);
       c.lineWidth = 4 * this.dpr;
-      if (cur.present) {
-        c.strokeStyle = '#0d47a1';
-        c.setLineDash([]);
-        if (cur.pinch) { c.fillStyle = 'rgba(13, 71, 161, 0.55)'; c.fill(); }
-      } else {
-        c.strokeStyle = '#9e9e9e';
-        c.setLineDash([6 * this.dpr, 6 * this.dpr]);
-      }
+      c.strokeStyle = cur.present ? '#0d47a1' : '#9e9e9e';
+      if (cur.present && cur.pinch) { c.fillStyle = 'rgba(13, 71, 161, 0.55)'; c.fill(); }
       c.stroke();
-      c.setLineDash([]);
-      c.beginPath(); c.arc(this.px(cur.x), this.py(cur.y), 3 * this.dpr, 0, Math.PI * 2);
-      c.fillStyle = cur.present ? '#0d47a1' : '#9e9e9e'; c.fill();
+    }
+    if (this.flash && e.held) {
+      const t = (now - this.flash.t0) / 450;
+      if (t < 1) drawPickFlash(c, this.px(e.held.x + S / 2), this.py(e.held.y + S / 2), S * this.scale * 0.8, t, this.dpr);
     }
   }
 }
@@ -1052,7 +1198,7 @@ return { Renderer };
 })();
 
 // ===== render3d.js =====
-const __m3 = (() => {
+const __m4 = (() => {
 /**
  * render3d.js — perspective (3D) view of the box, drawn on a 2D <canvas>.
  *
@@ -1064,6 +1210,7 @@ const __m3 = (() => {
  * The hand controls x and y; depth (z) is handled automatically by the engine.
  */
 const { BOX, GEOM, DEFAULTS, rowZ, Z_FRONT } = __m1;
+const { drawHand, drawPickFlash } = __m3;
 
 const S = BOX.block;
 const W = BOX.width; const D = BOX.depth; const H = BOX.height; const T = BOX.wall;
@@ -1223,13 +1370,22 @@ class Renderer3D {
 
     const drawBlock = ({ b, z }) => {
       const col = COLORS[b.id % COLORS.length];
-      this.cuboid(b.x, b.y, z, b.x + S, b.y + S, z + S, col, { stroke: b === e.held ? '#000' : 'rgba(0,0,0,0.55)' });
-      if (b === cand) {
-        c.save();
-        const pts = [P(b.x, b.y + S, z), P(b.x + S, b.y + S, z), P(b.x + S, b.y + S, z + S), P(b.x, b.y + S, z + S)];
-        this.poly(pts, null, '#ff6d00', 4);
-        this.poly([P(b.x, b.y, z), P(b.x + S, b.y, z), P(b.x + S, b.y + S, z), P(b.x, b.y + S, z)], null, '#ff6d00', 4);
+      if (b === e.held) {
+        // Picked block: bright yellow outline with a glow
+        c.save(); c.shadowColor = '#ffab00'; c.shadowBlur = 14 * this.dpr;
+        this.cuboid(b.x, b.y, z, b.x + S, b.y + S, z + S, col, { stroke: '#ffd600' });
         c.restore();
+        this.cuboid(b.x, b.y, z, b.x + S, b.y + S, z + S, col, { stroke: '#ffd600' });
+        return;
+      }
+      this.cuboid(b.x, b.y, z, b.x + S, b.y + S, z + S, col);
+      if (b === cand) {
+        // Block that a pinch would pick: pulsing orange outline
+        const lw = 3 + 3 * (0.5 + 0.5 * Math.sin(performance.now() / 120));
+        const top = [P(b.x, b.y + S, z), P(b.x + S, b.y + S, z), P(b.x + S, b.y + S, z + S), P(b.x, b.y + S, z + S)];
+        const front = [P(b.x, b.y, z), P(b.x + S, b.y, z), P(b.x + S, b.y + S, z), P(b.x, b.y + S, z)];
+        this.poly(top, 'rgba(255,171,0,0.35)', '#ff6d00', lw);
+        this.poly(front, 'rgba(255,171,0,0.25)', '#ff6d00', lw);
       }
     };
     const high = (it) => it.b.y >= GEOM.partitionTop - 1e-6;
@@ -1249,22 +1405,30 @@ class Renderer3D {
     this.text(`${inSource} of ${BOX.totalBlocks} blocks here`, (sx0 + sx1) / 2, -1.5, -2, 1.6, '#263238', '700');
     this.text(`${inTarget} of ${BOX.totalBlocks} blocks here`, (tx0 + tx1) / 2, -1.5, -2, 1.6, '#263238', '700');
 
-    // Cursor: a ring at the depth of the block it would grab (or the held block).
+    // Hand avatar, drawn in the depth plane of the block it would grab (or holds).
     const cur = o.cursor;
+    const now = performance.now();
+    if (e.held && e.held.id !== this.lastHeldId) this.flash = { t0: now };
+    this.lastHeldId = e.held ? e.held.id : null;
     if (cur) {
       const ref = e.held || cand;
       const zc = ref ? this.zOf(ref) + S / 2 : MOUSE_PLANE_Z;
       const [px, py, cz] = this.project(cur.x, cur.y, zc);
-      const Rpx = DEFAULTS.grabRadius * 0.6 * this.f / cz;
-      c.beginPath(); c.arc(px, py, Rpx, 0, Math.PI * 2);
-      c.lineWidth = 4 * this.dpr;
-      if (cur.present) {
-        c.strokeStyle = '#0d47a1';
-        if (cur.pinch) { c.fillStyle = 'rgba(13, 71, 161, 0.55)'; c.fill(); }
-      } else { c.strokeStyle = '#9e9e9e'; c.setLineDash([6 * this.dpr, 6 * this.dpr]); }
-      c.stroke(); c.setLineDash([]);
-      c.beginPath(); c.arc(px, py, 3 * this.dpr, 0, Math.PI * 2);
-      c.fillStyle = cur.present ? '#0d47a1' : '#9e9e9e'; c.fill();
+      const pxPerCm = this.f / cz;
+      if (o.avatar) {
+        const pts = o.avatar.map((p) => { const q = this.project(cur.x + p.x, cur.y + p.y, zc); return [q[0], q[1]]; });
+        drawHand(c, pts, pxPerCm, { present: cur.present, pinch: cur.pinch, dpr: this.dpr });
+      } else {
+        c.beginPath(); c.arc(px, py, DEFAULTS.grabRadius * 0.6 * pxPerCm, 0, Math.PI * 2);
+        c.lineWidth = 4 * this.dpr; c.strokeStyle = cur.present ? '#0d47a1' : '#9e9e9e';
+        if (cur.present && cur.pinch) { c.fillStyle = 'rgba(13, 71, 161, 0.55)'; c.fill(); }
+        c.stroke();
+      }
+      if (this.flash && e.held) {
+        const t = (now - this.flash.t0) / 450;
+        const hb = e.held; const [fx, fy] = this.project(hb.x + S / 2, hb.y + S / 2, this.zOf(hb) + S / 2);
+        if (t < 1) drawPickFlash(c, fx, fy, S * 0.8 * pxPerCm, t, this.dpr);
+      }
     }
   }
 }
@@ -1273,7 +1437,7 @@ return { Renderer3D };
 })();
 
 // ===== filters.js =====
-const __m4 = (() => {
+const __m5 = (() => {
 /**
  * filters.js — One Euro filter (Casiez, Roussel & Vogel, CHI 2012).
  *
@@ -1323,7 +1487,7 @@ return { OneEuroFilter };
 })();
 
 // ===== inputs/mouse.js =====
-const __m5 = (() => {
+const __m6 = (() => {
 /**
  * inputs/mouse.js — simulation input for development and demonstrations.
  *
@@ -1373,7 +1537,7 @@ return { MouseInput };
 })();
 
 // ===== inputs/handmath.js =====
-const __m7 = (() => {
+const __m8 = (() => {
 /**
  * inputs/handmath.js — pure functions for webcam hand tracking (no DOM).
  *
@@ -1549,12 +1713,12 @@ return { LM, pinchRatio, PALM, cursorFromLandmarks, palmSize, DEFAULT_PINCH, REL
 })();
 
 // ===== config.js =====
-const __m8 = (() => {
+const __m9 = (() => {
 /**
  * config.js — settings the researcher may edit without touching the rest of the code.
  */
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 
 /** Trial durations in seconds. */
 const TEST_DURATION = 60;
@@ -1596,7 +1760,7 @@ return { APP_VERSION, TEST_DURATION, PRACTICE_DURATION, FPS_WARNING, MEDIAPIPE_L
 })();
 
 // ===== inputs/camera.js =====
-const __m6 = (() => {
+const __m7 = (() => {
 /**
  * inputs/camera.js — laptop webcam hand tracking with MediaPipe HandLandmarker.
  *
@@ -1608,8 +1772,8 @@ const __m6 = (() => {
  * using the reach area. Extra fields (ratio, palm, label, ...) are used by the
  * setup check and for logging.
  */
-const { cursorFromLandmarks, pinchRatio, palmSize, PinchDetector, selectHand, nearestHand, DEFAULT_PINCH } = __m7;
-const { MEDIAPIPE_LOCAL, MEDIAPIPE_CDN, MEDIAPIPE_MODEL_CDN, HANDEDNESS_INVERTED } = __m8;
+const { cursorFromLandmarks, pinchRatio, palmSize, PinchDetector, selectHand, nearestHand, DEFAULT_PINCH } = __m8;
+const { MEDIAPIPE_LOCAL, MEDIAPIPE_CDN, MEDIAPIPE_MODEL_CDN, HANDEDNESS_INVERTED } = __m9;
 
 // Bones of the hand skeleton for the preview overlay (MediaPipe landmark pairs).
 const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11],
@@ -1828,6 +1992,8 @@ class CameraInput {
     this.latest = {
       present: true, u, v, pinch, ratio, t: now,
       ratioSmooth: this.pinch.value,
+      landmarks: hand.image,                 // all 21 points: drives the hand avatar
+      aspect,
       palm: palmSize(hand.image, aspect),
       label: hand.label, score: hand.score,
       wrist: { u: this.mx(hand.image[0].x), v: hand.image[0].y },
@@ -1915,7 +2081,7 @@ return { CameraInput };
 })();
 
 // ===== setup.js =====
-const __m9 = (() => {
+const __m10 = (() => {
 /**
  * setup.js — camera setup check and per-participant calibration.
  *
@@ -1929,8 +2095,8 @@ const __m9 = (() => {
  *
  * Returns a plain object that is stored with every trial run afterwards.
  */
-const { median, percentile } = __m7;
-const { FPS_WARNING } = __m8;
+const { median, percentile } = __m8;
+const { FPS_WARNING } = __m9;
 
 const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11],
   [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
@@ -2146,7 +2312,7 @@ return { distanceHint, brightnessHint, runSetupCheck };
 })();
 
 // ===== storage.js =====
-const __m10 = (() => {
+const __m11 = (() => {
 /**
  * storage.js — saving sessions in this browser (localStorage) and exporting them.
  *
@@ -2248,14 +2414,15 @@ const __m0 = (() => {
  */
 const { VBBTEngine } = __m1;
 const { Renderer } = __m2;
-const { Renderer3D } = __m3;
-const { OneEuroFilter } = __m4;
-const { MouseInput } = __m5;
-const { CameraInput } = __m6;
-const { pinchThresholds } = __m7;
-const { runSetupCheck } = __m9;
-const { loadSessions, saveSession, saveLastTrial, loadLastTrial, clearAll, getConsent, setConsent, nextTrialNumber, toCSV, download } = __m10;
-const { APP_VERSION, TEST_DURATION, PRACTICE_DURATION, FPS_WARNING, CONSENT_TITLE, CONSENT_TEXT, CONSENT_BUTTON } = __m8;
+const { Renderer3D } = __m4;
+const { OneEuroFilter } = __m5;
+const { MouseInput } = __m6;
+const { CameraInput } = __m7;
+const { pinchThresholds } = __m8;
+const { handOffsets, templateHand } = __m3;
+const { runSetupCheck } = __m10;
+const { loadSessions, saveSession, saveLastTrial, loadLastTrial, clearAll, getConsent, setConsent, nextTrialNumber, toCSV, download } = __m11;
+const { APP_VERSION, TEST_DURATION, PRACTICE_DURATION, FPS_WARNING, CONSENT_TITLE, CONSENT_TEXT, CONSENT_BUTTON } = __m9;
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -2418,11 +2585,14 @@ function readHand(now) {
   const r = inp.read(now);
   if (inp.kind === 'mouse') {
     const w = renderer.toWorld(r.u, r.v);
-    return { present: r.present, x: w.x, y: w.y, pinch: r.pinch, seq: r.seq, raw: r };
+    // Mouse mode: a built-in hand shape that closes while the button is held.
+    state.mouseT = (state.mouseT || 0) + ((r.pinch ? 1 : 0) - (state.mouseT || 0)) * 0.35;
+    state.avatar = templateHand(state.mouseT, testedHand());
+    return { present: r.present, x: w.x, y: w.y, pinch: r.pinch, seq: r.seq, raw: r, avatar: state.avatar };
   }
   // Camera: smooth u, v with the One Euro filter, then map the reach area onto the box.
   if (!r.present) { state.wasPresent = false; return { present: false, x: null, y: null, pinch: false, seq: r.seq, raw: r }; }
-  if (!state.wasPresent) { state.filters.u.reset(); state.filters.v.reset(); }
+  if (!state.wasPresent) { state.filters.u.reset(); state.filters.v.reset(); state.avatarFresh = true; }
   state.wasPresent = true;
   const ts = r.t / 1000;
   const u = state.filters.u.filter(r.u, ts);
@@ -2432,7 +2602,17 @@ function readHand(now) {
   const fy = (R.v1 - v) / (R.v1 - R.v0);
   const x = Math.max(-4, Math.min(57.7, BOX_X0 + fx * (BOX_X1 - BOX_X0)));
   const y = Math.max(-1, Math.min(33, REACH_Y0 + fy * (REACH_Y1 - REACH_Y0)));
-  return { present: true, x, y, pinch: r.pinch, ratio: r.ratioSmooth, seq: r.seq, raw: r };
+  // Hand avatar: all 21 landmarks, placed so its pinch point sits on the cursor.
+  // Lightly smoothed (half-way to each new camera frame) to remove jitter.
+  if (r.landmarks && r.seq !== state.avatarSeq) {
+    const offs = handOffsets(r.landmarks, r.aspect || 4 / 3, (ix) => inp.mx(ix));
+    state.avatar = !state.avatar || state.avatarFresh
+      ? offs
+      : state.avatar.map((p, i) => ({ x: p.x + 0.5 * (offs[i].x - p.x), y: p.y + 0.5 * (offs[i].y - p.y) }));
+    state.avatarSeq = r.seq;
+    state.avatarFresh = false;
+  }
+  return { present: true, x, y, pinch: r.pinch, ratio: r.ratioSmooth, seq: r.seq, raw: r, avatar: state.avatar };
 }
 
 // ---------------------------------------------------------------------------
@@ -2694,7 +2874,10 @@ function frame(now) {
   renderer.draw(eng, {
     cursor: hand && hand.x != null ? { x: hand.x, y: hand.y, pinch: hand.pinch, present: hand.present }
       : (eng.cursor ? { ...eng.cursor, present: false, pinch: false } : null),
-    highlight: ui.highlight.checked && state.phase === 'running',
+    avatar: hand?.avatar || state.avatar || null,
+    // Highlight the block a pinch would pick: always while the pinch is closed and
+    // nothing is held yet; otherwise only if the "Highlight" option is ticked.
+    highlight: state.phase === 'running' && (ui.highlight.checked || (hand?.pinch && !eng.held)),
   });
 }
 

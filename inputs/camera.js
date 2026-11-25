@@ -231,6 +231,8 @@ export class CameraInput {
     this.latest = {
       present: true, u, v, pinch, ratio, t: now,
       ratioSmooth: this.pinch.value,
+      landmarks: hand.image,                 // all 21 points: drives the hand avatar
+      aspect,
       palm: palmSize(hand.image, aspect),
       label: hand.label, score: hand.score,
       wrist: { u: this.mx(hand.image[0].x), v: hand.image[0].y },

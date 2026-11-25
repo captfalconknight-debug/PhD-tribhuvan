@@ -350,9 +350,11 @@ export class VBBTEngine {
       blockId: b.id,
       from: this.sideOf(b),
       t0: this.t,
-      // keep the offset between cursor and block centre so the block does not jump
-      offX: cx - this.cursor.x,
-      offY: cy - this.cursor.y,
+      // The block snaps to the pinch point (between the avatar's thumb and index
+      // tips): no offset. The snap itself is not counted as carry movement.
+      offX: 0,
+      offY: 0,
+      snapping: true,
       path: 0,
       minClearance: null,      // smallest gap above the partition top while over it
       peakSpeed: 0,
@@ -389,8 +391,13 @@ export class VBBTEngine {
     // 3D: once lifted above the box walls, the block moves to the depth row it will land in.
     if (this.rows > 1 && b.y >= BOX.height) b.row = this.landingRow(b);
 
-    // Kinematics of the carry (block centre path)
+    // Kinematics of the carry (block centre path); the first move is the snap into the hand
     const c = this.carry;
+    if (c.snapping) {
+      c.snapping = false;
+      c.hist = [{ t: this.t, x: b.x + S / 2, y: b.y + S / 2 }];
+      return;
+    }
     c.path += Math.hypot(b.x - x0, b.y - y0);
     const cx = b.x + S / 2; const cy = b.y + S / 2;
     if (skipSpeed) c.hist = [];   // ignore the jump that follows a tracking gap

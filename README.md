@@ -42,6 +42,12 @@ node scripts/build-single.js
 
 **Esc** or **Abort** stops a trial without saving it.
 
+### What the participant sees
+- A **see-through hand** that copies their hand: every finger bends, opens and closes as theirs do.
+- The **pinch point** is where the avatar's thumb and index fingertips meet. The fingertips are **white** when open and turn **glowing yellow** when pinched.
+- The block that a pinch would pick **pulses orange**. When picked, it **snaps between the fingertips** with a yellow flash and stays outlined in yellow until it is let go.
+- In the 3D view, a **shadow** shows where the carried block will land.
+
 ### Webcam set-up tips
 - **Lighting:** light in front of the participant (a lamp or window facing them). No bright window behind them.
 - **Background:** plain and uncluttered behind the hand. Avoid skin-coloured backgrounds.
@@ -99,7 +105,7 @@ Edit `CONSENT_TEXT` in `config.js` with your ethics-approved wording, then updat
 
 **Automated tests (all passing):**
 ```bash
-npm test         # 25 unit tests: game engine, pinch/hand maths, smoothing filter
+npm test         # 29 unit tests: game engine, pinch/hand maths, smoothing filter
 npm run smoke    # browser test (3D view; VBBT_VIEW=2d for 2D): full practice + 60 s trial in mouse mode, saving, CSV/JSON export,
                  # webcam pipeline loads the bundled model, camera check starts/cancels, no external requests
 node tests/smoke.mjs dist/vbbt.html   # same test on the single-file build
@@ -136,6 +142,7 @@ The smoke test needs Playwright (`npm i -D playwright && npx playwright install 
 | `engine.js` | Game rules, physics, scoring and metrics (no browser code; unit-tested) |
 | `render.js` | Draws the 2D front view |
 | `render3d.js` | Draws the 3D perspective view (own projection maths, no 3D library) |
+| `avatar.js` | Semi-transparent hand avatar from all 21 tracked hand points; pick-up flash |
 | `setup.js` | Camera check and calibration wizard |
 | `inputs/camera.js` | Webcam + MediaPipe hand tracking |
 | `inputs/handmath.js` | Pinch ratio, hysteresis, hand selection (pure functions) |

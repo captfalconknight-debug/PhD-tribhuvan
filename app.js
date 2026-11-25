@@ -10,6 +10,7 @@ import { OneEuroFilter } from './filters.js';
 import { MouseInput } from './inputs/mouse.js';
 import { CameraInput } from './inputs/camera.js';
 import { pinchThresholds } from './inputs/handmath.js';
+import { handOffsets, templateHand } from './avatar.js';
 import { runSetupCheck } from './setup.js';
 import {
   loadSessions, saveSession, saveLastTrial, loadLastTrial, clearAll, getConsent, setConsent,
@@ -181,11 +182,14 @@ function readHand(now) {
   const r = inp.read(now);
   if (inp.kind === 'mouse') {
     const w = renderer.toWorld(r.u, r.v);
-    return { present: r.present, x: w.x, y: w.y, pinch: r.pinch, seq: r.seq, raw: r };
+    // Mouse mode: a built-in hand shape that closes while the button is held.
+    state.mouseT = (state.mouseT || 0) + ((r.pinch ? 1 : 0) - (state.mouseT || 0)) * 0.35;
+    state.avatar = templateHand(state.mouseT, testedHand());
+    return { present: r.present, x: w.x, y: w.y, pinch: r.pinch, seq: r.seq, raw: r, avatar: state.avatar };
   }
   // Camera: smooth u, v with the One Euro filter, then map the reach area onto the box.
   if (!r.present) { state.wasPresent = false; return { present: false, x: null, y: null, pinch: false, seq: r.seq, raw: r }; }
-  if (!state.wasPresent) { state.filters.u.reset(); state.filters.v.reset(); }
+  if (!state.wasPresent) { state.filters.u.reset(); state.filters.v.reset(); state.avatarFresh = true; }
   state.wasPresent = true;
   const ts = r.t / 1000;
   const u = state.filters.u.filter(r.u, ts);
@@ -195,7 +199,17 @@ function readHand(now) {
   const fy = (R.v1 - v) / (R.v1 - R.v0);
   const x = Math.max(-4, Math.min(57.7, BOX_X0 + fx * (BOX_X1 - BOX_X0)));
   const y = Math.max(-1, Math.min(33, REACH_Y0 + fy * (REACH_Y1 - REACH_Y0)));
-  return { present: true, x, y, pinch: r.pinch, ratio: r.ratioSmooth, seq: r.seq, raw: r };
+  // Hand avatar: all 21 landmarks, placed so its pinch point sits on the cursor.
+  // Lightly smoothed (half-way to each new camera frame) to remove jitter.
+  if (r.landmarks && r.seq !== state.avatarSeq) {
+    const offs = handOffsets(r.landmarks, r.aspect || 4 / 3, (ix) => inp.mx(ix));
+    state.avatar = !state.avatar || state.avatarFresh
+      ? offs
+      : state.avatar.map((p, i) => ({ x: p.x + 0.5 * (offs[i].x - p.x), y: p.y + 0.5 * (offs[i].y - p.y) }));
+    state.avatarSeq = r.seq;
+    state.avatarFresh = false;
+  }
+  return { present: true, x, y, pinch: r.pinch, ratio: r.ratioSmooth, seq: r.seq, raw: r, avatar: state.avatar };
 }
 
 // ---------------------------------------------------------------------------
@@ -457,7 +471,10 @@ function frame(now) {
   renderer.draw(eng, {
     cursor: hand && hand.x != null ? { x: hand.x, y: hand.y, pinch: hand.pinch, present: hand.present }
       : (eng.cursor ? { ...eng.cursor, present: false, pinch: false } : null),
-    highlight: ui.highlight.checked && state.phase === 'running',
+    avatar: hand?.avatar || state.avatar || null,
+    // Highlight the block a pinch would pick: always while the pinch is closed and
+    // nothing is held yet; otherwise only if the "Highlight" option is ticked.
+    highlight: state.phase === 'running' && (ui.highlight.checked || (hand?.pinch && !eng.held)),
   });
 }
 
